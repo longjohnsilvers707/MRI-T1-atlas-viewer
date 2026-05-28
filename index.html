@@ -1,0 +1,1280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Brain Atlas Viewer</title>
+<style>
+:root {
+  --bg:          #0d1117;
+  --panel:       #161b22;
+  --panel2:      #1c2230;
+  --border:      #30363d;
+  --text:        #c9d1d9;
+  --dim:         #6e7681;
+  --accent:      #58a6ff;
+  --accent-dark: #388bfd;
+  --success:     #3fb950;
+  --danger:      #f85149;
+  --radius:      6px;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', system-ui, sans-serif;
+  font-size: 13px;
+  background: var(--bg);
+  color: var(--text);
+}
+
+/* ── Layout ────────────────────────────────────────────── */
+#app {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+}
+
+#sidebar {
+  width: 290px;
+  min-width: 250px;
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+#viewer {
+  flex: 1;
+  position: relative;
+  background: #000;
+  overflow: hidden;
+}
+
+canvas#gl1 {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* ── Sidebar header ─────────────────────────────────────── */
+.s-header {
+  padding: 10px 14px 8px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.s-header h1 {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: 0.2px;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.s-header h1 svg { flex-shrink: 0; }
+
+.label-xs {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--dim);
+  margin-bottom: 5px;
+}
+
+/* ── Form elements ──────────────────────────────────────── */
+select, input[type="range"], input[type="text"] {
+  background: #21262d;
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: var(--radius);
+  font-size: 12px;
+  outline: none;
+}
+
+select { width: 100%; padding: 5px 8px; cursor: pointer; }
+select:hover, select:focus { border-color: var(--accent); }
+
+input[type="text"] {
+  width: 100%;
+  padding: 5px 8px;
+}
+input[type="text"]:focus { border-color: var(--accent); }
+
+input[type="range"] {
+  -webkit-appearance: none;
+  height: 4px;
+  padding: 0;
+  border: none;
+  background: var(--border);
+  cursor: pointer;
+  border-radius: 2px;
+  flex: 1;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  background: var(--accent);
+  border-radius: 50%;
+  border: none;
+}
+
+input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--accent);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+/* ── Buttons ────────────────────────────────────────────── */
+button {
+  background: #21262d;
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: var(--radius);
+  padding: 4px 10px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+  line-height: 1.4;
+}
+button:hover { background: #2d333b; border-color: #6e7681; }
+button:active { background: #1c2230; }
+
+.btn-primary {
+  background: var(--accent-dark);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+.btn-primary:hover { background: var(--accent); }
+
+.btn-row { display: flex; gap: 5px; }
+.btn-row button { flex: 1; }
+
+/* ── Atlas section ──────────────────────────────────────── */
+#atlasSection {
+  padding: 8px 14px 10px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.file-row {
+  margin-top: 6px;
+  padding: 6px 8px;
+  background: #21262d;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.file-row label { font-size: 11px; color: var(--dim); display: block; margin-bottom: 3px; }
+.file-row input[type="file"] {
+  font-size: 11px;
+  color: var(--text);
+  width: 100%;
+}
+.file-row input[type="file"]::file-selector-button {
+  background: #2d333b;
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  margin-right: 6px;
+}
+.file-hint {
+  font-size: 10px;
+  color: var(--dim);
+  margin-top: 4px;
+  line-height: 1.4;
+}
+
+/* ── Region panel ───────────────────────────────────────── */
+#regionPanel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.rp-search {
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.rp-actions {
+  padding: 5px 14px;
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.rp-count {
+  font-size: 10px;
+  color: var(--dim);
+  padding: 3px 14px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+#regionList {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+#regionList::-webkit-scrollbar { width: 4px; }
+#regionList::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+.region-item {
+  display: flex;
+  align-items: center;
+  padding: 3px 14px;
+  gap: 7px;
+  cursor: default;
+  transition: background 0.08s;
+  border-left: 2px solid transparent;
+}
+.region-item:hover { background: #1c2230; }
+.region-item.hovered {
+  background: rgba(88,166,255,0.08);
+  border-left-color: var(--accent);
+}
+
+.swatch-wrap {
+  position: relative;
+  width: 13px;
+  height: 13px;
+  border-radius: 3px;
+  border: 1px solid rgba(255,255,255,0.18);
+  flex-shrink: 0;
+  overflow: hidden;
+  cursor: pointer;
+}
+.swatch-wrap input[type="color"] {
+  position: absolute;
+  inset: -4px;
+  opacity: 0;
+  cursor: pointer;
+  width: calc(100% + 8px);
+  height: calc(100% + 8px);
+}
+
+.r-name {
+  font-size: 11.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  color: var(--text);
+  line-height: 1;
+  padding: 3px 0;
+}
+.r-name.off { color: var(--dim); }
+
+/* ── Display controls ───────────────────────────────────── */
+#controlsPanel, #slicePanel {
+  padding: 8px 14px 10px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+  background: var(--bg);
+}
+
+#slicePanel .label-xs {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 7px;
+}
+
+#slicePanel button {
+  padding: 2px 8px;
+  font-size: 10px;
+}
+
+.mm-readout {
+  font-size: 10.5px;
+  color: var(--text);
+  width: 42px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+  font-weight: 600;
+}
+
+.ctrl-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 7px;
+}
+.ctrl-row:last-child { margin-bottom: 0; }
+.ctrl-lbl {
+  font-size: 11px;
+  color: var(--dim);
+  width: 82px;
+  flex-shrink: 0;
+}
+.ctrl-row select { flex: 1; margin: 0; padding: 3px 6px; }
+.ctrl-row input[type="color"] {
+  width: 32px;
+  height: 22px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px;
+  background: #21262d;
+  cursor: pointer;
+}
+
+/* ── Viewer overlays ────────────────────────────────────── */
+#toolbarOverlay {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: flex;
+  gap: 6px;
+  z-index: 50;
+}
+
+.overlay-btn {
+  background: rgba(22,27,34,0.88);
+  backdrop-filter: blur(6px);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 5px 11px;
+  border-radius: var(--radius);
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+.overlay-btn:hover {
+  background: rgba(88,166,255,0.18);
+  border-color: var(--accent);
+}
+
+#statusBar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 22px;
+  background: rgba(13,17,23,0.82);
+  backdrop-filter: blur(4px);
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  font-size: 11px;
+  color: var(--dim);
+  gap: 14px;
+  pointer-events: none;
+  user-select: none;
+}
+
+#loadingOverlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(13,17,23,0.88);
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  z-index: 100;
+}
+#loadingOverlay.active { display: flex; }
+
+.spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.75s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+#loadingMsg {
+  font-size: 13px;
+  color: var(--dim);
+}
+
+#toast {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-6px);
+  background: var(--panel2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 7px 14px;
+  font-size: 12px;
+  color: var(--text);
+  opacity: 0;
+  transition: opacity 0.2s, transform 0.2s;
+  z-index: 200;
+  white-space: nowrap;
+  pointer-events: none;
+}
+#toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+#toast.err { border-color: var(--danger); }
+
+/* ── Region group headers ───────────────────────────────── */
+.region-group-hdr {
+  padding: 5px 14px 2px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--dim);
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  margin-top: 2px;
+}
+
+/* ── Empty state ────────────────────────────────────────── */
+.empty-state {
+  padding: 20px;
+  text-align: center;
+  color: var(--dim);
+  font-size: 12px;
+  line-height: 1.6;
+}
+</style>
+</head>
+<body>
+<div id="app">
+
+<!-- ═══════════════ SIDEBAR ═══════════════ -->
+<aside id="sidebar">
+
+  <!-- Header -->
+  <div class="s-header">
+    <h1>
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <circle cx="8" cy="8" r="7" stroke="#58a6ff" stroke-width="1.5"/>
+        <path d="M4 8 Q6 4 8 8 Q10 12 12 8" stroke="#58a6ff" stroke-width="1.2" fill="none" stroke-linecap="round"/>
+        <circle cx="8" cy="8" r="1.5" fill="#58a6ff"/>
+      </svg>
+      Brain Atlas Viewer
+    </h1>
+  </div>
+
+  <!-- Atlas selector -->
+  <div id="atlasSection">
+    <div class="label-xs">Atlas</div>
+    <select id="atlasSelect">
+      <option value="aal">AAL  —  116 cortical &amp; subcortical regions</option>
+      <option value="jhu">JHU  —  189 gray-matter parcels</option>
+      <option value="aicha">AICHA hr  —  192 homotopic regions</option>
+      <option value="cit168">CIT168  —  16 subcortical nuclei</option>
+    </select>
+
+    <!-- AAL info -->
+    <div id="panel-aal" class="file-hint" style="margin-top:4px;">
+      Pre-loaded from NiiVue CDN — no file needed.
+    </div>
+
+    <!-- JHU file picker -->
+    <div id="panel-jhu" class="file-row" style="display:none;">
+      <label>JHU atlas NIfTI (.nii / .nii.gz)</label>
+      <input type="file" id="fileJHU" accept=".nii,.gz">
+      <div class="file-hint">Download from FSL atlas package or your institute.</div>
+    </div>
+
+    <!-- AICHA file picker -->
+    <div id="panel-aicha" class="file-row" style="display:none;">
+      <label>AICHA atlas NIfTI (.nii / .nii.gz)</label>
+      <input type="file" id="fileAICHA" accept=".nii,.gz">
+      <div class="file-hint">Download AICHAhr_vol7.nii from gin.cnrs.fr/en/tools/aicha</div>
+    </div>
+
+    <!-- CIT168 file picker -->
+    <div id="panel-cit168" class="file-row" style="display:none;">
+      <label>CIT168 atlas NIfTI (.nii / .nii.gz)</label>
+      <input type="file" id="fileCIT168" accept=".nii,.gz">
+      <div class="file-hint">Download from osf.io/jkzwp</div>
+    </div>
+  </div>
+
+  <!-- Region list -->
+  <div id="regionPanel">
+    <div class="rp-search">
+      <input type="text" id="regionSearch" placeholder="Search regions…">
+    </div>
+    <div class="rp-actions">
+      <button id="btnAll">All</button>
+      <button id="btnNone">None</button>
+      <button id="btnInvert">Invert</button>
+      <button id="btnRandColors" title="Assign random colors">🎨 Colors</button>
+    </div>
+    <div class="rp-count" id="rpCount">Loading…</div>
+    <div id="regionList">
+      <div class="empty-state">Loading atlas…</div>
+    </div>
+  </div>
+
+  <!-- Slice position (X, Y, Z) -->
+  <div id="slicePanel">
+    <div class="label-xs">
+      <span>MNI Position</span>
+      <button id="btnCenter" title="Move crosshair to origin (0, 0, 0)">Center</button>
+    </div>
+
+    <div class="ctrl-row">
+      <span class="ctrl-lbl">X — Sagittal</span>
+      <input type="range" id="slX" min="-90" max="90" step="1" value="0">
+      <span class="mm-readout" id="rdX">0 mm</span>
+    </div>
+    <div class="ctrl-row">
+      <span class="ctrl-lbl">Y — Coronal</span>
+      <input type="range" id="slY" min="-126" max="90" step="1" value="0">
+      <span class="mm-readout" id="rdY">0 mm</span>
+    </div>
+    <div class="ctrl-row" style="margin-bottom:0;">
+      <span class="ctrl-lbl">Z — Axial</span>
+      <input type="range" id="slZ" min="-72" max="108" step="1" value="0">
+      <span class="mm-readout" id="rdZ">0 mm</span>
+    </div>
+  </div>
+
+  <!-- Display controls -->
+  <div id="controlsPanel">
+    <div class="label-xs" style="margin-bottom:7px;">Display</div>
+
+    <div class="ctrl-row">
+      <span class="ctrl-lbl">Atlas opacity</span>
+      <input type="range" id="slAtlasOpacity" min="0" max="100" value="85">
+    </div>
+    <div class="ctrl-row">
+      <span class="ctrl-lbl">BG opacity</span>
+      <input type="range" id="slBgOpacity" min="0" max="100" value="100">
+    </div>
+    <div class="ctrl-row">
+      <span class="ctrl-lbl">Outline</span>
+      <select id="selOutline">
+        <option value="0">None</option>
+        <option value="0.01" selected>Gap</option>
+        <option value="1">Opaque</option>
+        <option value="-1">Black</option>
+      </select>
+    </div>
+    <div class="ctrl-row">
+      <span class="ctrl-lbl">3D render</span>
+      <select id="selRender">
+        <option value="-1">Slices only</option>
+        <option value="0" selected>Matte</option>
+        <option value="0.4">Medium</option>
+        <option value="1.0">High</option>
+      </select>
+    </div>
+    <div class="ctrl-row">
+      <span class="ctrl-lbl">Background</span>
+      <input type="color" id="bgColor" value="#000000">
+    </div>
+    <div class="ctrl-row">
+      <span class="ctrl-lbl">Crosshairs</span>
+      <input type="checkbox" id="chkCrosshair" checked>
+    </div>
+    <div class="ctrl-row">
+      <span class="ctrl-lbl">Interpolate</span>
+      <input type="checkbox" id="chkInterp">
+    </div>
+  </div>
+</aside>
+
+<!-- ═══════════════ VIEWER ═══════════════ -->
+<main id="viewer">
+  <canvas id="gl1"></canvas>
+
+  <div id="toolbarOverlay">
+    <button class="overlay-btn" id="btnFigureMode" title="Hide crosshairs &amp; UI for clean export">Figure mode</button>
+    <button class="overlay-btn" id="btnScreenshot">📷 Save PNG</button>
+  </div>
+
+  <div id="loadingOverlay" class="active">
+    <div class="spinner"></div>
+    <div id="loadingMsg">Initializing…</div>
+  </div>
+
+  <div id="statusBar">
+    <span id="hoverLabel">Hover over brain to identify regions</span>
+    <span id="locationLabel"></span>
+  </div>
+
+  <div id="toast"></div>
+</main>
+</div><!-- #app -->
+
+<script>
+// ═══════════════════════════════════════════════════════════════════════
+//  GLOBAL ERROR VISIBILITY
+//  (Surface ANY error in the loading overlay so silent failures are seen)
+// ═══════════════════════════════════════════════════════════════════════
+function showFatalError(msg) {
+  const ov = document.getElementById('loadingOverlay')
+  const sp = ov ? ov.querySelector('.spinner') : null
+  const lm = document.getElementById('loadingMsg')
+  if (ov) ov.classList.add('active')
+  if (sp) sp.style.display = 'none'
+  if (lm) {
+    lm.style.color   = '#f85149'
+    lm.style.maxWidth= '70%'
+    lm.style.textAlign='center'
+    lm.style.fontFamily='monospace'
+    lm.style.fontSize='12px'
+    lm.style.lineHeight='1.5'
+    lm.style.whiteSpace='pre-wrap'
+    lm.innerHTML = '<b>Error</b>\n\n' + String(msg).replace(/</g, '&lt;')
+  }
+}
+window.addEventListener('error',            e => showFatalError(e.message + '\n' + (e.filename || '') + ':' + (e.lineno || '')))
+window.addEventListener('unhandledrejection', e => showFatalError(e.reason?.message || e.reason || 'unhandled rejection'))
+</script>
+
+<script type="module">
+// ═══════════════════════════════════════════════════════════════════════
+//  IMPORT NIIVUE  (with CDN fallback)
+// ═══════════════════════════════════════════════════════════════════════
+async function importNiivue() {
+  const cdns = [
+    'https://unpkg.com/@niivue/niivue@0.69.0/dist/index.js',
+    'https://cdn.jsdelivr.net/npm/@niivue/niivue@0.69.0/dist/index.js',
+    'https://unpkg.com/@niivue/niivue@0.69.0/build/niivue/index.js',
+  ]
+  let lastErr
+  for (const url of cdns) {
+    try {
+      document.getElementById('loadingMsg').textContent = 'Loading NiiVue from CDN…'
+      const mod = await import(url)
+      if (mod && mod.Niivue && mod.SHOW_RENDER) return mod
+      lastErr = new Error('module missing Niivue / SHOW_RENDER exports')
+    } catch (e) {
+      lastErr = e
+      console.warn(`CDN failed: ${url}`, e)
+    }
+  }
+  throw new Error(`All CDNs failed.\nLast error: ${lastErr?.message || lastErr}`)
+}
+
+const { Niivue, SHOW_RENDER } = await importNiivue()
+
+// ═══════════════════════════════════════════════════════════════════════
+//  LABEL PARSERS
+//  Space-delimited format:   "idx  name  [extra]"
+//  Pipe-delimited format:    "idx|short|long|category"
+// ═══════════════════════════════════════════════════════════════════════
+function parseSpace(text) {
+  return text.split('\n')
+    .map(l => l.trim())
+    .filter(l => l && !l.startsWith('#'))
+    .map(l => {
+      const p = l.split(/\s+/)
+      return { index: parseInt(p[0]), name: p[1] ?? '' }
+    })
+    .filter(r => !isNaN(r.index) && r.name)
+}
+
+function parsePipe(text) {
+  return text.split('\n')
+    .map(l => l.trim())
+    .filter(l => l && !l.startsWith('#') && l.includes('|'))
+    .map(l => {
+      const p = l.split('|')
+      return {
+        index:    parseInt(p[0]),
+        name:     (p[2] || p[1] || '').trim(),
+        short:    (p[1] || '').trim(),
+        category: parseInt(p[3] ?? '1') || 1,
+      }
+    })
+    .filter(r => !isNaN(r.index) && r.name)
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  COLOUR UTILITIES
+// ═══════════════════════════════════════════════════════════════════════
+function hsl2rgb(h, s, l) {
+  s /= 100; l /= 100
+  const k = n => (n + h / 30) % 12
+  const a = s * Math.min(l, 1 - l)
+  const f = n => l - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1))
+  return [Math.round(f(0)*255), Math.round(f(8)*255), Math.round(f(4)*255)]
+}
+
+function genColors(n) {
+  // Golden-angle spread for maximal perceptual distinctness
+  return Array.from({ length: n }, (_, i) => {
+    const h = (i * 137.508) % 360
+    const s = 72 + (i % 5) * 4
+    const l = 52 + (i % 3) * 8
+    return hsl2rgb(h, s, l)
+  })
+}
+
+function rgb2hex([r, g, b]) {
+  return '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('')
+}
+
+function hex2rgb(hex) {
+  return [
+    parseInt(hex.slice(1, 3), 16),
+    parseInt(hex.slice(3, 5), 16),
+    parseInt(hex.slice(5, 7), 16),
+  ]
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════════════════════════════════════
+let nv           = null
+let regions      = []   // { index, name, short?, category?, color:[r,g,b], visible:bool }
+let atlasLut     = null // live reference to NiiVue LUT array
+let currentKey   = 'aal'
+let hoverIdx     = -1
+let searchTerm   = ''
+let figureMode   = false
+
+// ═══════════════════════════════════════════════════════════════════════
+//  NIIVUE COLORMAP
+//
+//  NiiVue's cmapper.makeLabelLut expects parallel arrays:
+//    { R, G, B, A, I, labels }   (NOT a packed LUT)
+//
+//  R[i] / G[i] / B[i] / A[i] gives the colour of label I[i].
+// ═══════════════════════════════════════════════════════════════════════
+function buildColormap() {
+  const R = [0], G = [0], B = [0], A = [0], I = [0]
+  const labels = ['Background']
+  for (const r of regions) {
+    if (r.index === 0) continue        // index 0 reserved for background
+    R.push(r.color[0])
+    G.push(r.color[1])
+    B.push(r.color[2])
+    A.push(r.visible ? 255 : 0)
+    I.push(r.index)
+    labels.push(r.name)
+  }
+  return { R, G, B, A, I, labels }
+}
+
+// Push current `regions` state to NiiVue and re-upload to GPU.
+// Cheap to call (≤192 regions × a few math ops), so we use it for every
+// update path — bulk buttons, checkboxes, swatches alike.
+function applyColormap() {
+  if (!nv || nv.volumes.length < 2) return
+  nv.volumes[1].setColormapLabel(buildColormap())
+  atlasLut = nv.volumes[1].colormapLabel.lut
+  nv.updateGLVolume()
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  SELECTION HELPERS
+// ═══════════════════════════════════════════════════════════════════════
+function selectAll(vis) {
+  for (const r of regions) r.visible = vis
+  applyColormap()
+  renderList()
+}
+
+function invertSel() {
+  for (const r of regions) r.visible = !r.visible
+  applyColormap()
+  renderList()
+}
+
+function randomColors() {
+  const c = genColors(regions.length)
+  regions.forEach((r, i) => { r.color = c[i] })
+  applyColormap()
+  renderList()
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  REGION LIST RENDER
+// ═══════════════════════════════════════════════════════════════════════
+function renderList() {
+  const listEl  = document.getElementById('regionList')
+  const countEl = document.getElementById('rpCount')
+  const q       = searchTerm.toLowerCase()
+  const shown   = q ? regions.filter(r => r.name.toLowerCase().includes(q)) : regions
+  const vis     = regions.filter(r => r.visible).length
+
+  countEl.textContent =
+    `${vis} / ${regions.length} visible` +
+    (q ? ` — ${shown.length} matching "${q}"` : '')
+
+  if (!shown.length) {
+    listEl.innerHTML = '<div class="empty-state">No matching regions</div>'
+    return
+  }
+
+  // For JHU atlas, group by category
+  const useGroups = currentKey === 'jhu' && shown.some(r => r.category)
+  let html = ''
+
+  if (useGroups) {
+    const catNames = { 1: 'Cortical', 2: 'Subcortical', 3: 'CSF / Ventricles' }
+    const cats = [1, 2, 3]
+    for (const cat of cats) {
+      const grp = shown.filter(r => (r.category ?? 1) === cat)
+      if (!grp.length) continue
+      html += `<div class="region-group-hdr">${catNames[cat] ?? cat}</div>`
+      html += grp.map(r => regionRow(r)).join('')
+    }
+  } else {
+    html = shown.map(r => regionRow(r)).join('')
+  }
+
+  listEl.innerHTML = html
+}
+
+function regionRow(r) {
+  const hov = r.index === hoverIdx ? ' hovered' : ''
+  const hexColor = rgb2hex(r.color)
+  return `<div class="region-item${hov}" data-idx="${r.index}">
+    <input type="checkbox" ${r.visible ? 'checked' : ''}
+      onchange="_tv(${r.index},this.checked)">
+    <div class="swatch-wrap" style="background:${hexColor}">
+      <input type="color" value="${hexColor}"
+        oninput="_tc(${r.index},this.value)"
+        onchange="_tc(${r.index},this.value)">
+    </div>
+    <span class="r-name ${r.visible ? '' : 'off'}" title="${r.name}">${r.name}</span>
+  </div>`
+}
+
+// Inline handler shims (needed because innerHTML event strings)
+window._tv = (idx, vis) => {
+  const r = regions.find(r => r.index === idx)
+  if (!r) return
+  r.visible = vis
+  applyColormap()
+  const nameEl = document.querySelector(`[data-idx="${idx}"] .r-name`)
+  if (nameEl) nameEl.classList.toggle('off', !vis)
+  document.getElementById('rpCount').textContent =
+    `${regions.filter(r => r.visible).length} / ${regions.length} visible`
+}
+
+window._tc = (idx, hex) => {
+  const r = regions.find(r => r.index === idx)
+  if (!r) return
+  r.color = hex2rgb(hex)
+  applyColormap()
+  const sw = document.querySelector(`[data-idx="${idx}"] .swatch-wrap`)
+  if (sw) sw.style.background = hex
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  ATLAS LOADING
+// ═══════════════════════════════════════════════════════════════════════
+const MNI_URL = '/cache/mni152.nii.gz'
+
+const ATLAS_META = {
+  aal: {
+    name:       'AAL',
+    volumeURL:  '/cache/aal.nii.gz',
+    labelPath:  '/labels/aal.txt',
+    parser:     parseSpace,
+  },
+  jhu: {
+    name:       'JHU',
+    volumeURL:  null,
+    labelPath:  '/labels/jhu.txt',
+    parser:     parsePipe,
+  },
+  aicha: {
+    name:       'AICHA',
+    volumeURL:  null,
+    labelPath:  '/labels/AICHAhr.txt',
+    parser:     parseSpace,
+  },
+  cit168: {
+    name:       'CIT168',
+    volumeURL:  null,
+    labelPath:  '/labels/CIT168.txt',
+    parser:     parseSpace,
+  },
+}
+
+function showLoading(msg) {
+  document.getElementById('loadingMsg').textContent = msg
+  document.getElementById('loadingOverlay').classList.add('active')
+}
+function hideLoading() {
+  document.getElementById('loadingOverlay').classList.remove('active')
+}
+
+async function loadAtlas(key, userFile = null) {
+  const meta = ATLAS_META[key]
+  if (!meta) return
+
+  showLoading(`Loading ${meta.name}…`)
+  currentKey = key
+
+  try {
+    // 1. Fetch label file from local server (/labels/)
+    const resp = await fetch(meta.labelPath)
+    if (!resp.ok) throw new Error(`Label fetch failed (${resp.status}) — is server.py running?`)
+    const text = await resp.text()
+    const parsed = meta.parser(text)
+    if (!parsed.length) throw new Error('No regions parsed from label file')
+
+    // 2. Assign colors
+    const colors = genColors(parsed.length)
+    regions = parsed.map((r, i) => ({ ...r, color: colors[i], visible: true }))
+
+    // 3. Resolve volume source
+    const volURL  = meta.volumeURL || null
+    const volFile = userFile || null
+    if (!volURL && !volFile) {
+      hideLoading()
+      toast(`Select a ${meta.name} NIfTI file above to continue`, 'info')
+      document.getElementById('regionList').innerHTML =
+        '<div class="empty-state">Load a NIfTI file to display this atlas</div>'
+      document.getElementById('rpCount').textContent = `${regions.length} regions (no volume loaded)`
+      renderList()
+      return
+    }
+
+    // 4. Load volumes
+    showLoading(`Fetching ${meta.name} volume…`)
+    const volEntry = volFile
+      ? { url: URL.createObjectURL(volFile), name: volFile.name }
+      : { url: volURL }
+
+    await nv.loadVolumes([ { url: MNI_URL }, volEntry ])
+
+    // 5. Install colormap (proper R/G/B/A/I format)
+    applyColormap()
+
+    // 6. Restore display settings
+    syncDisplayControls()
+
+    // 7. Default 3D angle + slice-slider calibration
+    nv.setRenderAzimuthElevation(290, 30)
+    calibrateSliceSliders()
+
+    renderList()
+    toast(`${meta.name}: ${regions.length} regions loaded`)
+
+  } catch (err) {
+    console.error(err)
+    toast(err.message, 'err')
+    document.getElementById('regionList').innerHTML =
+      `<div class="empty-state">Error: ${err.message}</div>`
+  } finally {
+    hideLoading()
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  DISPLAY CONTROLS
+// ═══════════════════════════════════════════════════════════════════════
+function syncDisplayControls() {
+  if (!nv || nv.volumes.length < 2) return
+  nv.setOpacity(0, +document.getElementById('slBgOpacity').value   / 100)
+  nv.setOpacity(1, +document.getElementById('slAtlasOpacity').value / 100)
+  nv.setAtlasOutline(+document.getElementById('selOutline').value)
+  nv.setVolumeRenderIllumination(+document.getElementById('selRender').value)
+  nv.setInterpolation(document.getElementById('chkInterp').checked)
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  SLICE POSITION (X / Y / Z) CONTROLS
+//
+//  - Sliders push to nv.scene.crosshairPos (which determines the slice
+//    shown in each 2-D view).
+//  - onLocationChange (canvas click / drag) pushes back into sliders.
+//  - Slider ranges are computed from the loaded volume's actual extents.
+// ═══════════════════════════════════════════════════════════════════════
+const _AX = ['X', 'Y', 'Z']
+let _syncingFromCanvas = false   // re-entrancy guard
+
+function calibrateSliceSliders() {
+  if (!nv || nv.volumes.length === 0) return
+  // Sample the 8 corners of the volume in fractional space and take
+  // per-axis min/max of their mm positions.
+  const cs = [[0,0,0],[1,0,0],[0,1,0],[0,0,1],[1,1,0],[1,0,1],[0,1,1],[1,1,1]]
+  const mms = cs.map(c => nv.frac2mm(c))
+  for (let a = 0; a < 3; a++) {
+    const vs   = mms.map(m => m[a])
+    const lo   = Math.floor(Math.min(...vs))
+    const hi   = Math.ceil(Math.max(...vs))
+    const slid = document.getElementById('sl' + _AX[a])
+    slid.min = lo
+    slid.max = hi
+  }
+  updateSlidersFromCrosshair()
+}
+
+function updateSlidersFromCrosshair() {
+  if (!nv || nv.volumes.length === 0) return
+  _syncingFromCanvas = true
+  const mm = nv.frac2mm(nv.scene.crosshairPos)
+  for (let a = 0; a < 3; a++) {
+    const v = Math.round(mm[a])
+    document.getElementById('sl' + _AX[a]).value     = v
+    document.getElementById('rd' + _AX[a]).textContent = `${v} mm`
+  }
+  _syncingFromCanvas = false
+}
+
+function setSliceMM(axis, mmVal) {
+  if (!nv || nv.volumes.length === 0) return
+  const mm = nv.frac2mm(nv.scene.crosshairPos)
+  mm[axis] = mmVal
+  nv.scene.crosshairPos = nv.mm2frac(mm)
+  nv.drawScene()
+  document.getElementById('rd' + _AX[axis]).textContent = `${mmVal} mm`
+  // mirror the actual displayed coordinates in the status bar
+  const data = { string: `(${mm[0].toFixed(0)}, ${mm[1].toFixed(0)}, ${mm[2].toFixed(0)}) mm` }
+  document.getElementById('locationLabel').textContent = data.string
+}
+
+function centerCrosshair() {
+  if (!nv || nv.volumes.length === 0) return
+  nv.scene.crosshairPos = nv.mm2frac([0, 0, 0])
+  nv.drawScene()
+  updateSlidersFromCrosshair()
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  HOVER TRACKING
+// ═══════════════════════════════════════════════════════════════════════
+function onMouseMove(e) {
+  if (!nv || nv.volumes.length < 2) return
+  const pos = nv.getNoPaddingNoBorderCanvasRelativeMousePosition(e, nv.gl.canvas)
+  if (!pos) return
+  const frac = nv.canvasPos2frac([pos.x * nv.uiData.dpr, pos.y * nv.uiData.dpr])
+  if (frac[0] < 0) return
+  const mm  = nv.frac2mm(frac)
+  const vox = nv.volumes[1].mm2vox(mm)
+  const idx = nv.volumes[1].getValue(vox[0], vox[1], vox[2])
+  if (!isFinite(idx) || idx === hoverIdx) return
+
+  hoverIdx = idx
+  nv.opts.atlasActiveIndex = idx
+  nv.updateGLVolume()
+
+  const r = regions.find(r => r.index === idx)
+  document.getElementById('hoverLabel').textContent =
+    r ? `Region: ${r.name}` : (idx > 0 ? `Index: ${idx}` : 'Hover over brain')
+
+  // Highlight matching row without full re-render
+  document.querySelectorAll('.region-item.hovered')
+    .forEach(el => el.classList.remove('hovered'))
+  const row = document.querySelector(`.region-item[data-idx="${idx}"]`)
+  if (row) {
+    row.classList.add('hovered')
+    row.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  }
+}
+
+function onMouseLeave() {
+  hoverIdx = -1
+  document.getElementById('hoverLabel').textContent = 'Hover over brain to identify regions'
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  SCREENSHOT
+// ═══════════════════════════════════════════════════════════════════════
+function saveScreenshot() {
+  if (!nv) return
+  // Synchronously redraw then capture before browser can clear the buffer
+  nv.drawScene()
+  const canvas = document.getElementById('gl1')
+  const url = canvas.toDataURL('image/png')
+  if (!url || url.length < 200) {
+    toast('Screenshot failed — try again', 'err')
+    return
+  }
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `atlas_${currentKey}_${Date.now()}.png`
+  a.click()
+  toast('Screenshot saved')
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  FIGURE MODE  (hides crosshairs & status bar for clean capture)
+// ═══════════════════════════════════════════════════════════════════════
+function toggleFigureMode() {
+  figureMode = !figureMode
+  const btn = document.getElementById('btnFigureMode')
+
+  if (figureMode) {
+    btn.textContent = '✓ Figure mode'
+    btn.style.borderColor = 'var(--success)'
+    document.getElementById('statusBar').style.display = 'none'
+    if (nv) {
+      nv.opts.crosshairWidth = 0
+      nv.opts.isOrientCube = false
+      nv.drawScene()
+    }
+  } else {
+    btn.textContent = 'Figure mode'
+    btn.style.borderColor = ''
+    document.getElementById('statusBar').style.display = 'flex'
+    if (nv) {
+      nv.opts.crosshairWidth = document.getElementById('chkCrosshair').checked ? 1 : 0
+      nv.drawScene()
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  TOAST
+// ═══════════════════════════════════════════════════════════════════════
+let _toastTimer = null
+function toast(msg, type = 'info') {
+  const el = document.getElementById('toast')
+  el.textContent = msg
+  el.className = type === 'err' ? 'show err' : 'show'
+  clearTimeout(_toastTimer)
+  _toastTimer = setTimeout(() => el.classList.remove('show'), 3500)
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════════════════════════════════════
+async function init() {
+  showLoading('Initializing NiiVue…')
+
+  nv = new Niivue({
+    show3Dcrosshair:  true,
+    backColor:        [0, 0, 0, 1],
+    isOrientCube:     false,
+    onLocationChange: (data) => {
+      document.getElementById('locationLabel').textContent = data.string
+      if (!_syncingFromCanvas) updateSlidersFromCrosshair()
+    },
+    logging: false,
+  })
+
+  await nv.attachTo('gl1')
+
+  nv.opts.multiplanarShowRender = SHOW_RENDER.ALWAYS
+  nv.opts.crosshairGap          = 10
+  nv.opts.yoke3Dto2DZoom        = true
+  nv.opts.dragMode              = nv.dragModes.pan
+  nv.setMultiplanarPadPixels(6)
+
+  // ── Atlas selector ──────────────────────────────────────
+  const atlasSelect = document.getElementById('atlasSelect')
+
+  function showAtlasPanel(key) {
+    ['aal', 'jhu', 'aicha', 'cit168'].forEach(k => {
+      const el = document.getElementById(`panel-${k}`)
+      if (el) el.style.display = k === key ? '' : 'none'
+    })
+  }
+
+  atlasSelect.onchange = () => {
+    const key = atlasSelect.value
+    showAtlasPanel(key)
+    if (key === 'aal') loadAtlas('aal')
+    // For others, user must load a file first (or region list shows prompt)
+    else loadAtlas(key)
+  }
+
+  // File inputs for atlases requiring local NIfTI
+  document.getElementById('fileJHU').onchange   = e => { if (e.target.files[0]) loadAtlas('jhu',    e.target.files[0]) }
+  document.getElementById('fileAICHA').onchange = e => { if (e.target.files[0]) loadAtlas('aicha',  e.target.files[0]) }
+  document.getElementById('fileCIT168').onchange= e => { if (e.target.files[0]) loadAtlas('cit168', e.target.files[0]) }
+
+  // ── Display controls ────────────────────────────────────
+  document.getElementById('slAtlasOpacity').oninput = () => {
+    if (nv.volumes.length > 1) nv.setOpacity(1, +document.getElementById('slAtlasOpacity').value / 100)
+  }
+  document.getElementById('slBgOpacity').oninput = () => {
+    if (nv.volumes.length > 0) nv.setOpacity(0, +document.getElementById('slBgOpacity').value / 100)
+  }
+  document.getElementById('selOutline').onchange = () => {
+    nv.setAtlasOutline(+document.getElementById('selOutline').value)
+  }
+  document.getElementById('selRender').onchange = () => {
+    nv.setVolumeRenderIllumination(+document.getElementById('selRender').value)
+  }
+  document.getElementById('bgColor').oninput = () => {
+    const h = document.getElementById('bgColor').value
+    nv.opts.backColor = [
+      parseInt(h.slice(1,3),16)/255,
+      parseInt(h.slice(3,5),16)/255,
+      parseInt(h.slice(5,7),16)/255,
+      1,
+    ]
+    nv.drawScene()
+  }
+  document.getElementById('chkCrosshair').onchange = () => {
+    if (!figureMode) {
+      nv.opts.crosshairWidth = document.getElementById('chkCrosshair').checked ? 1 : 0
+      nv.drawScene()
+    }
+  }
+  document.getElementById('chkInterp').onchange = () => {
+    nv.setInterpolation(document.getElementById('chkInterp').checked)
+  }
+
+  // ── Region panel actions ─────────────────────────────────
+  document.getElementById('regionSearch').oninput = e => {
+    searchTerm = e.target.value
+    renderList()
+  }
+  document.getElementById('btnAll').onclick    = () => selectAll(true)
+  document.getElementById('btnNone').onclick   = () => selectAll(false)
+  document.getElementById('btnInvert').onclick = () => invertSel()
+  document.getElementById('btnRandColors').onclick = () => randomColors()
+
+  // ── Slice position sliders ───────────────────────────────
+  for (let a = 0; a < 3; a++) {
+    const sl = document.getElementById('sl' + _AX[a])
+    sl.oninput = () => setSliceMM(a, parseInt(sl.value))
+  }
+  document.getElementById('btnCenter').onclick = () => centerCrosshair()
+
+  // ── Viewer buttons ───────────────────────────────────────
+  document.getElementById('btnScreenshot').onclick   = () => saveScreenshot()
+  document.getElementById('btnFigureMode').onclick   = () => toggleFigureMode()
+
+  // ── Canvas events ────────────────────────────────────────
+  const canvas = document.getElementById('gl1')
+  canvas.addEventListener('mousemove', onMouseMove)
+  canvas.addEventListener('mouseleave', onMouseLeave)
+
+  // ── Resize observer ──────────────────────────────────────
+  new ResizeObserver(() => { if (nv) nv.resizeListener() })
+    .observe(document.getElementById('viewer'))
+
+  // ── Load default atlas ───────────────────────────────────
+  showAtlasPanel('aal')
+  await loadAtlas('aal')
+}
+
+init().catch(err => {
+  console.error(err)
+  document.getElementById('loadingMsg').textContent = `Failed: ${err.message}`
+  document.getElementById('loadingOverlay').classList.add('active')
+})
+</script>
+</body>
+</html>
