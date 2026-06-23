@@ -3,9 +3,22 @@
 Browser-based viewer for the AAL, JHU, AICHA, and CIT168 brain
 atlases on the MNI152 template. Built on [NiiVue](https://niivue.com).
 
-Designed for quickly building publication-quality figures: show or hide
-individual regions, recolor any region, control X/Y/Z slice positions, then
-save a clean PNG of all four views (axial, sagittal, coronal, 3-D render).
+Two tabs:
+
+* **Figure** — the publication workflow: show/hide individual regions, recolor
+  any region, control X/Y/Z slice positions, then save a clean PNG of all four
+  views (axial, sagittal, coronal, 3-D render).
+* **Explore** — an interactive 3-D brain (Three.js) for teaching and exploration:
+  *explode* the regions apart and hold, *reassemble* them, color/group by
+  anatomical lobe · hemisphere · functional network, isolate a group, and
+  hover/click to highlight and identify any region.
+
+The Figure tab also includes a **Gray-matter volume** panel: compute per-region
+volumes for the loaded atlas, or drag in a subject T1 for a quick in-browser
+GM/WM segmentation and brain-volume estimate — no FSL, no install
+([details below](#gray-matter-volume)). A **Show atlas** toggle (bare vs. atlased
+brain), a **Diagnostics / error log** export, and an adaptive GPU/CPU compute
+backend round out this release (see the [changelog](#changelog)).
 
 ---
 
@@ -13,9 +26,15 @@ save a clean PNG of all four views (axial, sagittal, coronal, 3-D render).
 
 * Python 3.8 or newer (any platform — Windows / macOS / Linux)
 * A modern browser with WebGL2 (Chrome, Edge, Firefox, Safari)
-* Internet on first run (to fetch the NiiVue JS library from a public CDN)
+* Internet on first run — the app fetches NiiVue / Three.js from a public CDN, and
+  the subject-T1 segmentation additionally downloads TensorFlow.js and the
+  brainchop model on first use (both cached by the browser afterward)
 
 No `pip install`, no Node, no build step.
+
+> Tip: a real GPU makes the 3-D illumination modes and subject segmentation much
+> faster. On software-only WebGL the app still works — gradient lighting is
+> disabled and segmentation falls back to the CPU/WASM backend automatically.
 
 ---
 
@@ -42,6 +61,54 @@ workflow:
 4. Set Outline = Opaque in Display for crisp ROI edges
 5. Move the X/Y/Z sliders to show the slice planes you want
 6. Click Figure mode → Save PNG
+
+---
+
+## Gray-matter volume
+
+The **Gray-matter volume** panel (bottom of the Figure sidebar) gives two ways to
+get GM volumes — both run entirely in the browser, no FSL install and no upload:
+
+* **Region volumes (this atlas)** — instantly tabulates every parcel of the loaded
+  atlas (voxel count × voxel size → mm³ / cm³) plus a total. These are *template*
+  (MNI-space) volumes. Sort by any column; **Save CSV** to export.
+* **Subject T1 → quick GM estimate** — drag in a T1 NIfTI and the app segments it
+  into gray / white matter with [brainchop](https://github.com/neuroneural/brainchop)'s
+  fast model (`model5_gw_ae`) on your GPU via TensorFlow.js, then reports GM / WM /
+  total-brain cm³. The conformed T1 is loaded into the viewer with the classified
+  tissue shaded on top (GM orange, WM blue); use the **Atlas opacity** slider or
+  **Show atlas** toggle to adjust or hide the shading, and pick an atlas to return
+  to the template view. It's a *rough* estimate from a deliberately small, fast model —
+  not FSL-FAST quality — but needs no native tools. TensorFlow.js and the model are
+  fetched from a CDN on first use and cached by the browser.
+
+## Explore tab (3-D)
+
+Switch to the **Explore** tab for an interactive 3-D brain built from the AAL3
+region meshes (`meshes/*.obj`):
+
+* **Explode slider** (0–100%) spreads the 160 regions radially outward and holds
+  at any amount. **Explode** animates the regions apart and **Reassemble** animates
+  them smoothly back together; **Whole** snaps instantly to the fully assembled brain.
+* **Color / group by** anatomical lobe, hemisphere, or functional network; click
+  a group to *isolate* it (hide the rest).
+* **Hover** any region to identify it; **click** to select and dim the others.
+* Search + per-region show/hide; **Save PNG** of the 3-D view.
+* Drag to orbit, scroll to zoom, shift-drag (or right-drag) to pan.
+
+### One-time mesh bake
+
+The Explore tab loads a single pre-baked bundle, `meshes/brain_bundle.json`. It
+ships in the repo; regenerate it (e.g. after changing the meshes) with:
+
+```
+python build_brain_bundle.py
+```
+
+This normalizes the meshes, computes per-region centroids, and tags each region
+with lobe / hemisphere / functional network. **Note:** the functional-network
+assignment (AAL3 → Yeo-style) is *approximate* and curated by region name — edit
+`NETWORK_MAP` in `build_brain_bundle.py` to refine it.
 
 ---
 
@@ -114,6 +181,53 @@ its atlas catalog informed which atlases this viewer ships labels for.
 [nitrc.org/projects/surfice](https://www.nitrc.org/projects/surfice)
 
 ---
+
+## Changelog
+
+### 2026-06-17
+
+A session focused on adding gray-matter volume calculation (without FSL),
+visualizing it, and hardening the app on machines without a GPU.
+
+**Gray-matter volume (new)** — replaces the abandoned FSL approach with
+in-browser, no-install tools (a new **Gray-matter volume** panel + results modal):
+
+* **Region volumes (this atlas)** — pure-JS voxel tally of the loaded atlas:
+  per-region volume in mm³/cm³, total GM, a sortable table, and CSV export.
+  Works for AAL/JHU/AICHA/CIT168; reported in template (MNI) space.
+* **Subject T1 → quick GM estimate** — drag in a T1 and segment GM/WM in the
+  browser with brainchop's fast model (`model5_gw_ae`) on TensorFlow.js, then
+  report GM / WM / total-brain cm³ (rough estimate, not FSL-FAST quality).
+* **Segmentation overlay** — the conformed T1 loads into the viewer with the
+  classified tissue shaded on top (GM orange, WM blue); adjust with the **Atlas
+  opacity** slider or **Show atlas** toggle. A **Back to atlas view (MNI152)**
+  button restores the template + atlas view.
+
+**Robustness / works-anywhere**
+
+* **Adaptive TF.js backend** — uses the GPU (WebGL) only on real hardware;
+  otherwise falls back to WASM (CPU/SIMD) → CPU, so segmentation runs anywhere
+  and never triggers the WebGL path that crashes software renderers.
+* **3D render crash fixed** — selecting Medium/High illumination could throw an
+  unhandled async rejection and blank the app; the call is now caught with a
+  Matte fallback.
+* **Software-WebGL handling** — on software/virtualized WebGL (e.g. SwiftShader),
+  gradient illumination (Medium/High) renders blank and can crash the tab, so
+  those options are detected and disabled with an explanatory hint.
+* **Diagnostics / error log** — a global logger captures errors from startup, an
+  environment snapshot (GPU vendor/renderer, active backend, etc.), and key
+  events; the **Diagnostics / error log** button opens a viewer and exports a
+  shareable `.txt`.
+
+**UI fixes**
+
+* Switching to JHU/AICHA/CIT168 (which ship no bundled NIfTI) now shows the bare
+  MNI brain and prompts for a file instead of leaving the previous atlas visible.
+* The Figure-tab sidebar now scrolls, so every settings panel is reachable on
+  shorter windows.
+* Added a **Show atlas** toggle (bare brain vs. atlased brain).
+* Explore tab: **Whole** now snaps instantly to assembled while **Reassemble**
+  animates (previously both did the same thing).
 
 ---
 

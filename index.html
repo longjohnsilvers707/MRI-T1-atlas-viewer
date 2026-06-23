@@ -44,9 +44,14 @@ html, body {
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow-y: auto;        /* scroll the whole sidebar when content can't fit */
+  overflow-x: hidden;
   flex-shrink: 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
 }
+#sidebar::-webkit-scrollbar { width: 6px; }
+#sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 
 #viewer {
   flex: 1;
@@ -206,7 +211,7 @@ button:active { background: #1c2230; }
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  min-height: 0;
+  min-height: 180px;       /* never collapse to nothing; forces sidebar scroll when cramped */
 }
 
 .rp-search {
@@ -289,12 +294,75 @@ button:active { background: #1c2230; }
 .r-name.off { color: var(--dim); }
 
 /* ── Display controls ───────────────────────────────────── */
-#controlsPanel, #slicePanel {
+#controlsPanel, #slicePanel, #volumePanel {
   padding: 8px 14px 10px;
   border-top: 1px solid var(--border);
   flex-shrink: 0;
   background: var(--bg);
 }
+
+/* ── Volumes panel + results modal ──────────────────────── */
+#volumePanel .file-row { margin-top: 8px; }
+#volumePanel button { width: 100%; }
+.vm-note { font-size: 10px; color: var(--dim); margin-top: 6px; line-height: 1.4; }
+
+#volModal {
+  position: fixed; inset: 0; z-index: 300;
+  background: rgba(13,17,23,0.78);
+  display: none; align-items: center; justify-content: center;
+  padding: 24px;
+}
+#volModal.active { display: flex; }
+.vm-card {
+  background: #161b22; border: 1px solid var(--border); border-radius: 8px;
+  width: min(580px, 96vw); max-height: 86vh;
+  display: flex; flex-direction: column; overflow: hidden;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+}
+.vm-head {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 12px 16px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.vm-head h2 { font-size: 14px; font-weight: 600; margin: 0; color: var(--text); }
+.vm-close {
+  background: none; border: none; color: var(--dim); font-size: 20px;
+  line-height: 1; cursor: pointer; padding: 0 4px; width: auto;
+}
+.vm-close:hover { color: var(--text); background: none; }
+.vm-sub { font-size: 11px; color: var(--dim); padding: 8px 16px 0; line-height: 1.5; }
+.vm-summary {
+  display: flex; gap: 10px; flex-wrap: wrap; padding: 12px 16px;
+}
+.vm-stat {
+  flex: 1 1 120px; background: #21262d; border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 8px 12px;
+}
+.vm-stat .k { font-size: 10px; color: var(--dim); text-transform: uppercase; letter-spacing: .3px; }
+.vm-stat .v { font-size: 18px; font-weight: 700; color: var(--text); margin-top: 2px; }
+.vm-stat .u { font-size: 11px; color: var(--dim); font-weight: 400; }
+.vm-body { overflow: auto; min-height: 0; }
+table.vol-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+table.vol-table th, table.vol-table td {
+  padding: 5px 14px; text-align: right; border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+table.vol-table th:first-child, table.vol-table td:first-child { text-align: left; }
+table.vol-table thead th {
+  position: sticky; top: 0; background: #161b22; color: var(--dim);
+  cursor: pointer; user-select: none; font-weight: 600;
+}
+table.vol-table thead th:hover { color: var(--text); }
+table.vol-table tbody tr:hover { background: #1c2230; }
+table.vol-table tr.total-row td {
+  font-weight: 700; color: var(--text);
+  border-top: 2px solid var(--accent); border-bottom: none;
+  position: sticky; bottom: 0; background: #161b22;
+}
+.vm-foot {
+  padding: 10px 16px; border-top: 1px solid var(--border);
+  display: flex; gap: 8px; justify-content: flex-end; flex-shrink: 0;
+}
+.vm-foot button { width: auto; }
 
 #slicePanel .label-xs {
   display: flex;
@@ -459,10 +527,262 @@ button:active { background: #1c2230; }
   font-size: 12px;
   line-height: 1.6;
 }
+
+/* ═══════════════ TABS ═══════════════ */
+#app { flex-direction: column; }   /* was implicitly row; now stack tab bar + content */
+
+#tabBar {
+  display: flex;
+  align-items: stretch;
+  height: 38px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  gap: 0;
+}
+.tab-btn {
+  background: transparent;
+  border: none;
+  border-right: 1px solid var(--border);
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  color: var(--dim);
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 0 18px;
+  cursor: pointer;
+  transition: color 0.12s, background 0.12s, border-color 0.12s;
+}
+.tab-btn:hover { background: var(--panel); color: var(--text); }
+.tab-btn.active {
+  color: var(--text);
+  background: var(--panel);
+  border-bottom-color: var(--accent);
+}
+
+#tabContent { flex: 1; display: flex; min-height: 0; overflow: hidden; }
+.tab-view { flex: 1; display: flex; min-height: 0; overflow: hidden; }
+.tab-view[hidden] { display: none; }
+
+/* ═══════════════ EXPLORE SIDEBAR ═══════════════ */
+#exploreSidebar {
+  width: 290px;
+  min-width: 250px;
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.ex-section {
+  padding: 9px 14px 11px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.netmap-note {
+  font-size: 10px;
+  color: var(--dim);
+  margin-top: 6px;
+  line-height: 1.4;
+  font-style: italic;
+}
+#exGroupList { display: flex; flex-direction: column; gap: 1px; }
+.group-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 4px;
+  border-radius: 4px;
+}
+.group-item:hover { background: #1c2230; }
+.gi-top { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.group-item .g-swatch {
+  width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0;
+  border: 1px solid rgba(255,255,255,0.18);
+}
+.group-item .g-name { flex: 1; font-size: 11.5px; }
+.group-item .g-name.off { color: var(--dim); text-decoration: line-through; }
+.group-item .g-count { font-size: 10px; color: var(--dim); font-variant-numeric: tabular-nums; }
+
+/* Compact explode / opacity sliders for group + region rows */
+.gi-ctrls, .ri-ctrls { display: flex; align-items: center; gap: 5px; padding-left: 1px; }
+.gi-lbl, .ri-lbl { font-size: 10px; color: var(--dim); width: 11px; text-align: center; flex-shrink: 0; }
+.gi-exp, .gi-op, .ri-exp, .ri-op {
+  flex: 1; min-width: 0; height: 11px; margin: 0; cursor: pointer; accent-color: var(--accent);
+}
+
+#exRegionPanel { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
+#exRegionList {
+  flex: 1; overflow-y: auto; overflow-x: hidden;
+  scrollbar-width: thin; scrollbar-color: var(--border) transparent;
+}
+#exRegionList::-webkit-scrollbar { width: 4px; }
+#exRegionList::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+.region-item.selected { background: rgba(88,166,255,0.16); border-left-color: var(--accent); }
+/* Explore region rows are two-line (top row + per-region sliders); scoped so the
+   Figure tab's single-line .region-item layout is unaffected. */
+#exRegionList .region-item { flex-direction: column; align-items: stretch; gap: 3px; padding: 4px 14px; }
+#exRegionList .ri-top { display: flex; align-items: center; gap: 7px; }
+#exRegionList .ri-top .r-name { cursor: pointer; }
+#exRegionList .g-swatch {
+  width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0;
+  border: 1px solid rgba(255,255,255,0.18);
+}
+
+/* ═══════════════ EXPLORE VIEWER (mirrors the figure viewer overlays) ═══════════════ */
+#exploreViewer { flex: 1; position: relative; background: #000; overflow: hidden; }
+canvas#glExplore { width: 100%; height: 100%; display: block; }
+
+#exploreToolbar { position: absolute; top: 10px; right: 10px; display: flex; gap: 6px; z-index: 50; }
+#exploreStatus {
+  position: absolute; bottom: 0; left: 0; right: 0; height: 22px;
+  background: rgba(13,17,23,0.82); backdrop-filter: blur(4px);
+  border-top: 1px solid var(--border); display: flex; align-items: center;
+  padding: 0 10px; font-size: 11px; color: var(--dim); gap: 14px;
+  pointer-events: none; user-select: none;
+}
+#exploreLoading {
+  position: absolute; inset: 0; background: rgba(13,17,23,0.92);
+  display: none; flex-direction: column; align-items: center; justify-content: center;
+  gap: 14px; z-index: 100;
+}
+#exploreLoading.active { display: flex; }
+#exploreToast {
+  position: absolute; top: 12px; left: 50%;
+  transform: translateX(-50%) translateY(-6px);
+  background: var(--panel2); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 7px 14px; font-size: 12px; color: var(--text);
+  opacity: 0; transition: opacity 0.2s, transform 0.2s; z-index: 200;
+  white-space: nowrap; pointer-events: none;
+}
+#exploreToast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+#exploreToast.err { border-color: var(--danger); }
+
+/* ═══════════════ EXPLORE ORIENTATION GIZMO ═══════════════ */
+#exGizmo {
+  position: absolute;
+  left: 10px;
+  bottom: 32px;
+  width: 84px;
+  height: 84px;
+  z-index: 40;
+  pointer-events: none;
+}
+#exGizmo canvas { width: 84px; height: 84px; display: block; }
+
+/* Orientation cube on the figure tab's render is drawn by NiiVue itself. */
+
+/* ═══════════════ LEARN PANEL (Explore tab) ═══════════════ */
+.overlay-btn.active {
+  background: rgba(63,185,80,0.22);
+  border-color: var(--success);
+  color: #fff;
+}
+
+#learnPanel {
+  width: 300px;
+  min-width: 260px;
+  background: var(--panel2);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+#learnPanel[hidden] { display: none; }
+
+.learn-hdr {
+  padding: 11px 14px 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+  flex-shrink: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.learn-hdr h2 {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.3;
+  flex: 1;
+}
+.learn-close {
+  background: transparent;
+  border: none;
+  color: var(--dim);
+  font-size: 16px;
+  line-height: 1;
+  padding: 2px 4px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.learn-close:hover { color: var(--text); background: transparent; border: none; }
+
+.learn-body {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 12px 14px 18px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+  line-height: 1.55;
+}
+.learn-body::-webkit-scrollbar { width: 4px; }
+.learn-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+.learn-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 12px; }
+.learn-chip {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  color: var(--text);
+  background: #21262d;
+}
+.learn-chip .dot {
+  display: inline-block;
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  margin-right: 5px;
+  vertical-align: middle;
+}
+
+.learn-section-lbl {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--dim);
+  margin: 14px 0 4px;
+}
+.learn-section-lbl:first-child { margin-top: 0; }
+.learn-body p { font-size: 12px; color: var(--text); }
+
+.learn-empty {
+  padding: 26px 18px;
+  text-align: center;
+  color: var(--dim);
+  font-size: 12px;
+  line-height: 1.6;
+}
 </style>
 </head>
 <body>
 <div id="app">
+
+<!-- ═══════════════ TAB BAR ═══════════════ -->
+<div id="tabBar">
+  <button class="tab-btn active" data-tab="figure">Figure</button>
+  <button class="tab-btn" data-tab="explore">Explore</button>
+</div>
+
+<div id="tabContent">
+
+<!-- ═══════════════ FIGURE VIEW ═══════════════ -->
+<div class="tab-view" id="view-figure">
 
 <!-- ═══════════════ SIDEBAR ═══════════════ -->
 <aside id="sidebar">
@@ -525,7 +845,7 @@ button:active { background: #1c2230; }
       <button id="btnAll">All</button>
       <button id="btnNone">None</button>
       <button id="btnInvert">Invert</button>
-      <button id="btnRandColors" title="Assign random colors">🎨 Colors</button>
+      <button id="btnRandColors" title="Assign random colors">Colors</button>
     </div>
     <div class="rp-count" id="rpCount">Loading…</div>
     <div id="regionList">
@@ -562,6 +882,10 @@ button:active { background: #1c2230; }
     <div class="label-xs" style="margin-bottom:7px;">Display</div>
 
     <div class="ctrl-row">
+      <span class="ctrl-lbl">Show atlas</span>
+      <input type="checkbox" id="chkShowAtlas" checked title="Toggle the atlas overlay to see the bare brain">
+    </div>
+    <div class="ctrl-row">
       <span class="ctrl-lbl">Atlas opacity</span>
       <input type="range" id="slAtlasOpacity" min="0" max="100" value="85">
     </div>
@@ -587,6 +911,11 @@ button:active { background: #1c2230; }
         <option value="1.0">High</option>
       </select>
     </div>
+    <div class="file-hint" id="renderHint" style="display:none; margin:-2px 0 6px;">
+      Medium/High (gradient lighting) need a hardware GPU — disabled here because this
+      browser is using software WebGL. Turn on hardware acceleration (Chrome/Edge:
+      Settings → System → “Use graphics acceleration when available”, then relaunch) to enable them.
+    </div>
     <div class="ctrl-row">
       <span class="ctrl-lbl">Background</span>
       <input type="color" id="bgColor" value="#000000">
@@ -600,6 +929,27 @@ button:active { background: #1c2230; }
       <input type="checkbox" id="chkInterp">
     </div>
   </div>
+
+  <!-- Volumes / gray-matter calculation -->
+  <div id="volumePanel">
+    <div class="label-xs" style="margin-bottom:7px;">Gray-matter volume</div>
+
+    <button id="btnRegionVol" class="btn-primary">Region volumes (this atlas)</button>
+
+    <button id="btnRestoreAtlas" style="margin-top:6px;">Back to atlas view (MNI152)</button>
+
+    <div class="file-row">
+      <label>Subject T1 → quick GM estimate</label>
+      <input type="file" id="fileT1" accept=".nii,.gz">
+      <button id="btnSegment" style="margin-top:6px;" disabled>Estimate brain volume</button>
+      <div class="vm-note">
+        In-browser segmentation (brainchop fast model). No upload — runs on your GPU
+        when available, otherwise on CPU (slower). Rough estimate, not FSL-FAST quality.
+      </div>
+    </div>
+
+    <button id="btnDiag" style="margin-top:8px;">Diagnostics / error log</button>
+  </div>
 </aside>
 
 <!-- ═══════════════ VIEWER ═══════════════ -->
@@ -608,7 +958,7 @@ button:active { background: #1c2230; }
 
   <div id="toolbarOverlay">
     <button class="overlay-btn" id="btnFigureMode" title="Hide crosshairs &amp; UI for clean export">Figure mode</button>
-    <button class="overlay-btn" id="btnScreenshot">📷 Save PNG</button>
+    <button class="overlay-btn" id="btnScreenshot">Save PNG</button>
   </div>
 
   <div id="loadingOverlay" class="active">
@@ -623,6 +973,125 @@ button:active { background: #1c2230; }
 
   <div id="toast"></div>
 </main>
+
+<!-- ═══════════════ VOLUME RESULTS MODAL ═══════════════ -->
+<div id="volModal">
+  <div class="vm-card">
+    <div class="vm-head">
+      <h2 id="vmTitle">Volumes</h2>
+      <button class="vm-close" id="vmClose" title="Close">&times;</button>
+    </div>
+    <div id="vmContent" style="display:flex; flex-direction:column; min-height:0; overflow:hidden;"></div>
+    <div class="vm-foot">
+      <button id="vmCsv">Save CSV</button>
+      <button id="vmDone" class="btn-primary">Close</button>
+    </div>
+  </div>
+</div>
+</div><!-- #view-figure -->
+
+<!-- ═══════════════ EXPLORE VIEW ═══════════════ -->
+<div class="tab-view" id="view-explore" hidden>
+
+  <aside id="exploreSidebar">
+    <div class="s-header">
+      <h1>
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <circle cx="8" cy="8" r="7" stroke="#58a6ff" stroke-width="1.5"/>
+          <path d="M4 8 Q6 4 8 8 Q10 12 12 8" stroke="#58a6ff" stroke-width="1.2" fill="none" stroke-linecap="round"/>
+          <circle cx="8" cy="8" r="1.5" fill="#58a6ff"/>
+        </svg>
+        Explore
+      </h1>
+    </div>
+
+    <!-- Motion -->
+    <div class="ex-section">
+      <div class="label-xs">Motion</div>
+      <div class="ctrl-row">
+        <span class="ctrl-lbl">Explode</span>
+        <input type="range" id="exExplode" min="0" max="100" value="0">
+        <span class="mm-readout" id="exExplodeRd">0%</span>
+      </div>
+      <div class="btn-row" style="margin-top:7px;">
+        <button id="exWhole">Whole</button>
+        <button id="exExplodeBtn" class="btn-primary">Explode</button>
+        <button id="exReassemble">Reassemble</button>
+      </div>
+      <div class="ctrl-row" style="margin-top:9px;">
+        <span class="ctrl-lbl">Auto-rotate</span>
+        <input type="checkbox" id="exSpin">
+      </div>
+    </div>
+
+    <!-- Color by -->
+    <div class="ex-section">
+      <div class="label-xs">Color / group by</div>
+      <select id="exColorBy">
+        <option value="lobe">Anatomical lobe</option>
+        <option value="network">Functional network</option>
+        <option value="hemisphere">Hemisphere</option>
+        <option value="single">Single color</option>
+      </select>
+      <div class="netmap-note" id="exNetNote" style="display:none;">
+        Functional-network assignment is approximate (AAL3 → Yeo-style).
+      </div>
+    </div>
+
+    <!-- Groups -->
+    <div class="ex-section">
+      <div class="label-xs">Groups <span style="font-weight:400;text-transform:none;letter-spacing:0;">— click name to isolate · ⤢ explode · ◐ opacity</span></div>
+      <div id="exGroupList"></div>
+    </div>
+
+    <!-- Region search list -->
+    <div id="exRegionPanel">
+      <div class="rp-search"><input type="text" id="exSearch" placeholder="Search regions…"></div>
+      <div class="rp-actions">
+        <button id="exAll">All</button>
+        <button id="exNone">None</button>
+        <button id="exClearSel">Clear selection</button>
+      </div>
+      <div class="rp-count" id="exCount">Loading…</div>
+      <div id="exRegionList"><div class="empty-state">Loading…</div></div>
+    </div>
+  </aside>
+
+  <!-- Learn panel — shown in Learn mode when a region is selected -->
+  <section id="learnPanel" hidden>
+    <div class="learn-hdr">
+      <h2 id="learnTitle">Region</h2>
+      <button class="learn-close" id="learnClose" title="Close">×</button>
+    </div>
+    <div class="learn-body" id="learnBody"></div>
+  </section>
+
+  <main id="exploreViewer">
+    <canvas id="glExplore"></canvas>
+
+    <div id="exploreToolbar">
+      <button class="overlay-btn" id="exLearn" title="Learn mode — click a region to see what it does">Learn</button>
+      <button class="overlay-btn" id="exReset">Reset view</button>
+      <button class="overlay-btn" id="exScreenshot">Save PNG</button>
+    </div>
+
+    <div id="exGizmo"><canvas id="glGizmo"></canvas></div>
+
+    <div id="exploreLoading" class="active">
+      <div class="spinner"></div>
+      <div id="exploreLoadingMsg">Loading 3D brain…</div>
+    </div>
+
+    <div id="exploreStatus">
+      <span id="exploreHover">Hover a region to identify · drag to orbit · scroll to zoom</span>
+      <span id="exploreSel"></span>
+    </div>
+
+    <div id="exploreToast"></div>
+  </main>
+</div><!-- #view-explore -->
+
+</div><!-- #tabContent -->
 </div><!-- #app -->
 
 <script>
@@ -647,8 +1116,31 @@ function showFatalError(msg) {
     lm.innerHTML = '<b>Error</b>\n\n' + String(msg).replace(/</g, '&lt;')
   }
 }
-window.addEventListener('error',            e => showFatalError(e.message + '\n' + (e.filename || '') + ':' + (e.lineno || '')))
-window.addEventListener('unhandledrejection', e => showFatalError(e.reason?.message || e.reason || 'unhandled rejection'))
+
+// ── Diagnostics / error log (defined early so it captures startup errors too) ──
+window.__diag = []
+window.diag = function (level, ...args) {
+  const msg = args.map(a => {
+    if (a instanceof Error) return (a.stack || a.message || String(a))
+    if (a && typeof a === 'object') { try { return JSON.stringify(a) } catch (_) { return String(a) } }
+    return String(a)
+  }).join(' ')
+  const entry = { t: new Date().toISOString(), level: level || 'info', msg }
+  window.__diag.push(entry)
+  if (window.__diag.length > 1000) window.__diag.shift()   // bounded ring buffer
+  try { (level === 'error' ? console.error : console.log)('[diag ' + entry.level + '] ' + msg) } catch (_) {}
+  return entry
+}
+
+window.addEventListener('error', e => {
+  window.diag('error', 'window.error:', e.message, (e.filename || '') + ':' + (e.lineno || ''))
+  showFatalError(e.message + '\n' + (e.filename || '') + ':' + (e.lineno || ''))
+})
+window.addEventListener('unhandledrejection', e => {
+  const r = e.reason
+  window.diag('error', 'unhandledrejection:', (r && r.stack) || (r && r.message) || r || 'unhandled rejection')
+  showFatalError((r && r.message) || r || 'unhandled rejection')
+})
 </script>
 
 <script type="module">
@@ -666,7 +1158,7 @@ async function importNiivue() {
     try {
       document.getElementById('loadingMsg').textContent = 'Loading NiiVue from CDN…'
       const mod = await import(url)
-      if (mod && mod.Niivue && mod.SHOW_RENDER) return mod
+      if (mod && mod.Niivue && mod.SHOW_RENDER && mod.NVImage) return mod
       lastErr = new Error('module missing Niivue / SHOW_RENDER exports')
     } catch (e) {
       lastErr = e
@@ -676,7 +1168,11 @@ async function importNiivue() {
   throw new Error(`All CDNs failed.\nLast error: ${lastErr?.message || lastErr}`)
 }
 
-const { Niivue, SHOW_RENDER } = await importNiivue()
+// Diagnostics logger (defined in the early classic script as window.diag)
+const diag = (level, ...args) => (window.diag ? window.diag(level, ...args) : console.log(level, ...args))
+
+const { Niivue, SHOW_RENDER, NVImage } = await importNiivue()
+diag('info', 'NiiVue module loaded')
 
 // ═══════════════════════════════════════════════════════════════════════
 //  LABEL PARSERS
@@ -875,13 +1371,17 @@ window._tv = (idx, vis) => {
     `${regions.filter(r => r.visible).length} / ${regions.length} visible`
 }
 
+// A colour drag fires oninput per pixel, and each applyColormap() re-uploads the
+// LUT to the GPU (updateGLVolume). Update the colour state + swatch synchronously,
+// but coalesce the GPU upload to one per animation frame.
+let _tcRaf = 0
 window._tc = (idx, hex) => {
   const r = regions.find(r => r.index === idx)
   if (!r) return
   r.color = hex2rgb(hex)
-  applyColormap()
   const sw = document.querySelector(`[data-idx="${idx}"] .swatch-wrap`)
   if (sw) sw.style.background = hex
+  if (!_tcRaf) _tcRaf = requestAnimationFrame(() => { _tcRaf = 0; applyColormap() })
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -947,6 +1447,11 @@ async function loadAtlas(key, userFile = null) {
     const volURL  = meta.volumeURL || null
     const volFile = userFile || null
     if (!volURL && !volFile) {
+      // This atlas ships no NIfTI (JHU/AICHA/CIT168 need a user file). Drop any
+      // previously-loaded atlas overlay and show the bare MNI template, so it's
+      // clear the atlas changed rather than silently leaving the old one up.
+      await nv.loadVolumes([ { url: MNI_URL } ])
+      calibrateSliceSliders()
       hideLoading()
       toast(`Select a ${meta.name} NIfTI file above to continue`, 'info')
       document.getElementById('regionList').innerHTML =
@@ -975,10 +1480,11 @@ async function loadAtlas(key, userFile = null) {
     calibrateSliceSliders()
 
     renderList()
+    diag('info', 'atlas loaded', meta.name, regions.length + ' regions')
     toast(`${meta.name}: ${regions.length} regions loaded`)
 
   } catch (err) {
-    console.error(err)
+    diag('error', 'atlas load failed', key, err)
     toast(err.message, 'err')
     document.getElementById('regionList').innerHTML =
       `<div class="empty-state">Error: ${err.message}</div>`
@@ -990,12 +1496,67 @@ async function loadAtlas(key, userFile = null) {
 // ═══════════════════════════════════════════════════════════════════════
 //  DISPLAY CONTROLS
 // ═══════════════════════════════════════════════════════════════════════
+// Atlas overlay opacity, gated by the "Show atlas" toggle (0 = bare brain).
+function applyAtlasVisibility() {
+  if (!nv || nv.volumes.length < 2) return
+  const on = document.getElementById('chkShowAtlas').checked
+  const op = +document.getElementById('slAtlasOpacity').value / 100
+  nv.setOpacity(1, on ? op : 0)
+}
+
+// nv.setVolumeRenderIllumination is async and can throw on the GPU when gradient
+// illumination is enabled (value > 0). Left uncaught it becomes an unhandled
+// rejection → the global handler shows the fatal-error overlay (looks like a crash).
+// Catch it, warn, and fall back to Matte so the app stays usable.
+async function setRenderIllumination(val) {
+  if (!nv) return
+  try {
+    await nv.setVolumeRenderIllumination(val)
+    nv.updateGLVolume()   // force the render tile to rebind the new shader/gradient
+  } catch (e) {
+    console.error('3D illumination failed', e)
+    toast('3D illumination unavailable on this GPU — using Matte', 'err')
+    const sel = document.getElementById('selRender')
+    if (sel) sel.value = '0'
+    try { await nv.setVolumeRenderIllumination(0); nv.updateGLVolume() } catch (_) { /* give up quietly */ }
+  }
+}
+
+// Gradient illumination (Medium/High) renders to a 3D-texture framebuffer. That
+// works on real GPUs but silently yields an all-zero gradient on software/
+// virtualized WebGL (SwiftShader, llvmpipe, "Microsoft Basic Render"), which makes
+// the 3D brain render blank. Detect those and disable the gradient modes.
+function gradientRenderSupported() {
+  try {
+    const dbg = nv.gl.getExtension('WEBGL_debug_renderer_info')
+    const r = (dbg ? (nv.gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) || '') : '').toLowerCase()
+    if (!r) return true   // can't tell → allow
+    return !/swiftshader|llvmpipe|softpipe|software|basic render|paravirtual|microsoft basic/.test(r)
+  } catch (_) {
+    return true
+  }
+}
+
+// Disable the gradient render options when the GPU can't render them.
+function gateRenderOptions() {
+  if (gradientRenderSupported()) return
+  const sel = document.getElementById('selRender')
+  if (!sel) return
+  for (const o of sel.options) {
+    if (+o.value > 0) { o.disabled = true; o.text += ' (needs GPU)' }
+  }
+  if (+sel.value > 0) { sel.value = '0'; setRenderIllumination(0) }   // never start blank
+  const hint = document.getElementById('renderHint')
+  if (hint) hint.style.display = ''
+  toast('Software WebGL detected (no GPU) — 3D illumination disabled. Enable hardware acceleration in your browser for full 3D.', 'err')
+}
+
 function syncDisplayControls() {
   if (!nv || nv.volumes.length < 2) return
-  nv.setOpacity(0, +document.getElementById('slBgOpacity').value   / 100)
-  nv.setOpacity(1, +document.getElementById('slAtlasOpacity').value / 100)
+  nv.setOpacity(0, +document.getElementById('slBgOpacity').value / 100)
+  applyAtlasVisibility()
   nv.setAtlasOutline(+document.getElementById('selOutline').value)
-  nv.setVolumeRenderIllumination(+document.getElementById('selRender').value)
+  setRenderIllumination(+document.getElementById('selRender').value)   // self-catching
   nv.setInterpolation(document.getElementById('chkInterp').checked)
 }
 
@@ -1123,7 +1684,7 @@ function toggleFigureMode() {
   const btn = document.getElementById('btnFigureMode')
 
   if (figureMode) {
-    btn.textContent = '✓ Figure mode'
+    btn.textContent = 'Figure mode (on)'
     btn.style.borderColor = 'var(--success)'
     document.getElementById('statusBar').style.display = 'none'
     if (nv) {
@@ -1137,6 +1698,7 @@ function toggleFigureMode() {
     document.getElementById('statusBar').style.display = 'flex'
     if (nv) {
       nv.opts.crosshairWidth = document.getElementById('chkCrosshair').checked ? 1 : 0
+      nv.opts.isOrientCube = true
       nv.drawScene()
     }
   }
@@ -1155,6 +1717,429 @@ function toast(msg, type = 'info') {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+//  GRAY-MATTER VOLUME CALCULATION
+//  Part 1: per-region atlas volumes (pure JS, no dependency)
+//  Part 2: subject T1 GM segmentation via brainchop fast model (TF.js)
+// ═══════════════════════════════════════════════════════════════════════
+let _vmCsv = null   // () => { filename, text }  for the active modal's CSV export
+
+function openVolModal(title) {
+  document.getElementById('vmTitle').textContent = title
+  document.getElementById('volModal').classList.add('active')
+}
+function closeVolModal() {
+  document.getElementById('volModal').classList.remove('active')
+}
+function setVmCsv(fn, label = 'Save CSV') {
+  _vmCsv = fn
+  const b = document.getElementById('vmCsv')
+  b.style.display = fn ? '' : 'none'
+  b.textContent = label
+}
+function saveVolCsv() {
+  if (!_vmCsv) return
+  const { filename, text } = _vmCsv()
+  const blob = new Blob([text], { type: 'text/csv' })
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob)
+  a.download = filename
+  a.click()
+  URL.revokeObjectURL(a.href)
+  toast('CSV saved')
+}
+// Compact cm³ formatting: big numbers need no decimals, small regions do
+function fmtVol(cm3) {
+  return cm3 >= 100 ? cm3.toFixed(0) : cm3 >= 10 ? cm3.toFixed(1) : cm3.toFixed(2)
+}
+
+// ── Part 1: atlas region volumes ───────────────────────────────────────
+let _volRows = []
+let _volSort = { key: 'cm3', dir: -1 }
+
+function computeRegionVolumes() {
+  if (!nv || nv.volumes.length < 2 || !nv.volumes[1].img) {
+    toast('Load an atlas volume first', 'err'); return
+  }
+  const vol = nv.volumes[1]
+  const img = vol.img
+  // voxel volume (mm³) from the spatial pixDims (indices 1..3)
+  const pd = vol.hdr?.pixDims || vol.pixDims || [0, 1, 1, 1]
+  const voxMM3 = Math.abs(pd[1] * pd[2] * pd[3]) || 1
+
+  // single pass over the label volume — never getValue() per voxel (millions)
+  const counts = new Map()
+  for (let i = 0; i < img.length; i++) {
+    const idx = Math.round(img[i])
+    if (idx > 0) counts.set(idx, (counts.get(idx) || 0) + 1)   // idx 0 = background
+  }
+  if (!counts.size) { toast('No labeled voxels found in atlas', 'err'); return }
+
+  const byIndex = new Map(regions.map(r => [r.index, r]))
+  _volRows = []
+  let totVox = 0
+  for (const [idx, n] of counts) {
+    const r = byIndex.get(idx)
+    _volRows.push({ name: r ? r.name : `Index ${idx}`, vox: n,
+                    mm3: n * voxMM3, cm3: n * voxMM3 / 1000 })
+    totVox += n
+  }
+  _volSort = { key: 'cm3', dir: -1 }
+  const totCm3 = totVox * voxMM3 / 1000
+  const meta = ATLAS_META[currentKey]
+
+  document.getElementById('vmContent').innerHTML = `
+    <div class="vm-sub">
+      ${meta ? meta.name : currentKey} · ${_volRows.length} regions · voxel
+      ${voxMM3.toFixed(2)} mm³. Volumes are in <b>template (MNI) space</b> — they
+      describe the atlas, not a specific subject.
+    </div>
+    <div class="vm-summary">
+      <div class="vm-stat"><div class="k">Total GM</div>
+        <div class="v">${fmtVol(totCm3)} <span class="u">cm³</span></div></div>
+      <div class="vm-stat"><div class="k">Regions</div>
+        <div class="v">${_volRows.length}</div></div>
+    </div>
+    <div class="vm-body"><table class="vol-table">
+      <thead><tr>
+        <th data-k="name">Region</th><th data-k="vox">Voxels</th>
+        <th data-k="mm3">mm³</th><th data-k="cm3">cm³</th>
+      </tr></thead>
+      <tbody id="vmTableBody"></tbody>
+      <tfoot><tr class="total-row">
+        <td>Total</td><td>${totVox.toLocaleString()}</td>
+        <td>${(totVox * voxMM3).toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
+        <td>${fmtVol(totCm3)}</td>
+      </tr></tfoot>
+    </table></div>`
+
+  renderVolTableBody()
+  document.querySelectorAll('#vmContent thead th').forEach(th => {
+    th.onclick = () => {
+      const k = th.dataset.k
+      if (_volSort.key === k) _volSort.dir *= -1
+      else _volSort = { key: k, dir: k === 'name' ? 1 : -1 }
+      renderVolTableBody()
+    }
+  })
+
+  setVmCsv(() => ({
+    filename: `region_volumes_${currentKey}.csv`,
+    text: 'Region,Voxels,Volume_mm3,Volume_cm3\n' +
+      _volRows.map(r => `"${r.name}",${r.vox},${r.mm3.toFixed(2)},${r.cm3.toFixed(4)}`).join('\n') +
+      `\nTotal,${totVox},${(totVox * voxMM3).toFixed(2)},${totCm3.toFixed(4)}\n`,
+  }))
+  openVolModal('Region volumes')
+}
+
+function renderVolTableBody() {
+  const k = _volSort.key, dir = _volSort.dir
+  const rows = [..._volRows].sort((a, b) => {
+    const va = a[k], vb = b[k]
+    return (typeof va === 'string' ? va.localeCompare(vb) : va - vb) * dir
+  })
+  document.getElementById('vmTableBody').innerHTML = rows.map(r => `
+    <tr><td>${r.name}</td><td>${r.vox.toLocaleString()}</td>
+    <td>${r.mm3.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
+    <td>${fmtVol(r.cm3)}</td></tr>`).join('')
+}
+
+// ── Part 2: subject GM segmentation (brainchop fast model) ─────────────
+// model5_gw_ae: 256³×1 in → 3 classes out (0 bg / 1 white / 2 gray).
+const BC_MODEL_BASE = 'https://cdn.jsdelivr.net/gh/neuroneural/brainchop@master/public/models/model5_gw_ae'
+const TFJS_VER = '4.22.0'
+let _tf = null, _bcModel = null, _segBusy = false
+let _segBackend = 'n/a'   // which TF.js backend inference actually ran on
+let _bcLabels = ['background', 'White Matter', 'Grey Matter']   // colormap3.json order
+
+function loadScript(src) {
+  return new Promise((res, rej) => {
+    const s = document.createElement('script')
+    s.src = src
+    s.onload = res
+    s.onerror = () => rej(new Error('script load failed: ' + src))
+    document.head.appendChild(s)
+  })
+}
+
+// Adaptive backend: WebGL only on a real GPU (it crashes software renderers);
+// otherwise WASM (CPU/SIMD) → plain CPU. This makes segmentation work anywhere.
+async function loadTF() {
+  if (_tf) return _tf
+  diag('info', 'loadTF: loading TensorFlow.js core', TFJS_VER)
+  if (!window.tf) {
+    const urls = [
+      `https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@${TFJS_VER}/dist/tf.min.js`,
+      `https://unpkg.com/@tensorflow/tfjs@${TFJS_VER}/dist/tf.min.js`,
+    ]
+    let ok = false, last
+    for (const u of urls) {
+      try { await loadScript(u); if (window.tf) { ok = true; break } }
+      catch (e) { last = e; diag('error', 'TF core CDN failed', u, e) }
+    }
+    if (!ok) throw new Error('Could not load TensorFlow.js (' + (last?.message || last) + ')')
+  }
+  _tf = window.tf
+  diag('info', 'TF.js core', _tf.version_core)
+
+  const hw = gradientRenderSupported()   // true ⇒ real GPU
+  const order = hw ? ['webgl', 'wasm', 'cpu'] : ['wasm', 'cpu']
+  diag('info', 'backend preference', order.join(' > '), 'softwareGL=' + !hw)
+
+  // Ensure the WASM backend is registered before we try to select it
+  if (order.includes('wasm') && (!_tf.findBackend || !_tf.findBackend('wasm'))) {
+    try {
+      await loadScript(`https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-wasm@${TFJS_VER}/dist/tf-backend-wasm.min.js`)
+      const base = `https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-wasm@${TFJS_VER}/dist/`
+      if (_tf.wasm && _tf.wasm.setWasmPaths) _tf.wasm.setWasmPaths(base)
+      else if (_tf.setWasmPaths) _tf.setWasmPaths(base)
+      diag('info', 'WASM backend script loaded')
+    } catch (e) { diag('error', 'WASM backend load failed', e) }
+  }
+
+  for (const b of order) {
+    try {
+      if (await _tf.setBackend(b)) { await _tf.ready(); _segBackend = b; break }
+    } catch (e) { diag('error', `setBackend(${b}) failed`, e) }
+  }
+  if (_segBackend === 'n/a') { await _tf.ready(); _segBackend = _tf.getBackend() }
+  diag('info', 'active TF backend', _segBackend)
+  return _tf
+}
+
+async function loadBcModel() {
+  if (!_bcModel) _bcModel = await _tf.loadLayersModel(BC_MODEL_BASE + '/model.json')
+  return _bcModel
+}
+async function loadBcLabels() {
+  try {
+    const r = await fetch(BC_MODEL_BASE + '/colormap3.json')
+    if (r.ok) { const j = await r.json(); if (Array.isArray(j.labels)) _bcLabels = j.labels }
+  } catch (e) { /* keep fallback labels */ }
+}
+
+async function runSegmentation(file) {
+  if (_segBusy) return
+  if (typeof nv.conform !== 'function') {
+    toast('This NiiVue build lacks conform(); cannot segment', 'err'); return
+  }
+  _segBusy = true
+  document.getElementById('btnSegment').disabled = true
+  diag('info', 'segmentation start', file.name, file.size + ' bytes')
+  try {
+    showLoading('Reading T1…')
+    const nvImg = await NVImage.loadFromFile({ file, name: file.name })
+
+    // Conform to 256³, 1 mm isotropic, RAS+ — the space brainchop trains on,
+    // and the reason each output voxel is exactly 1 mm³ (so count == mm³).
+    showLoading('Conforming to 256³ (1 mm)…')
+    // toRAS=true to match brainchop's training orientation; 256³ @ 1 mm are the defaults
+    const conf = await nv.conform(nvImg, true)
+    const src = conf.img
+    const nvox = src.length
+
+    // min–max intensity normalization to 0..1 (expected by the _ae model)
+    showLoading('Preparing input…')
+    let mn = Infinity, mx = -Infinity
+    for (let i = 0; i < nvox; i++) { const v = src[i]; if (v < mn) mn = v; if (v > mx) mx = v }
+    const rng = (mx - mn) || 1
+    const f = new Float32Array(nvox)
+    for (let i = 0; i < nvox; i++) f[i] = (src[i] - mn) / rng
+
+    showLoading('Loading segmentation model…')
+    await loadTF()
+    await loadBcModel()
+    await loadBcLabels()
+
+    const cpuMode = _segBackend !== 'webgl'
+    showLoading(`Running segmentation (${_segBackend})…` + (cpuMode ? ' — CPU mode, this can take a while' : ''))
+    diag('info', 'inference begin', 'backend=' + _segBackend, 'voxels=' + nvox)
+    await new Promise(r => setTimeout(r, 30))   // let the overlay paint first
+
+    const t0 = performance.now()
+    const side = Math.round(Math.cbrt(nvox))     // 256
+    const labelsT = _tf.tidy(() => {
+      const input = _tf.tensor(f, [1, side, side, side, 1])
+      const out = _bcModel.predict(input)
+      return (Array.isArray(out) ? out[0] : out).argMax(-1)   // [1,s,s,s] class ids
+    })
+    const labData = await labelsT.data()
+    labelsT.dispose()
+    diag('info', 'inference done', Math.round(performance.now() - t0) + ' ms')
+
+    const counts = {}
+    for (let i = 0; i < labData.length; i++) { const c = labData[i]; counts[c] = (counts[c] || 0) + 1 }
+
+    showLoading('Rendering segmentation…')
+    displaySegmentation(conf, labData)
+    hideLoading()
+    showSegResults(counts, file.name)
+  } catch (err) {
+    hideLoading()
+    diag('error', 'segmentation failed', 'backend=' + _segBackend, err)
+    const oom = /memory|texture|webgl|out of|alloc/i.test(err.message || '')
+    toast('Segmentation failed: ' + (err.message || err) +
+          (oom ? ' (ran out of memory — see Diagnostics)' : ' — see Diagnostics'), 'err')
+  } finally {
+    _segBusy = false
+    document.getElementById('btnSegment').disabled = false
+  }
+}
+
+// Shading colors for the on-brain overlay (and the modal legend)
+function segColorFor(name) {
+  if (/gr[ae]y|(^|\W)gm(\W|$)/i.test(name)) return [255, 140, 0]   // GM — orange
+  if (/white|(^|\W)wm(\W|$)/i.test(name))   return [74, 163, 255]  // WM — blue
+  return [170, 170, 170]
+}
+
+// NiiVue label LUT (R/G/B/A/I) over the brainchop tissue classes
+function buildSegLUT() {
+  const R = [], G = [], B = [], A = [], I = [], labels = []
+  for (let c = 0; c < _bcLabels.length; c++) {
+    I.push(c); labels.push(_bcLabels[c] || `Class ${c}`)
+    if (c === 0 || /background/i.test(_bcLabels[c] || '')) {
+      R.push(0); G.push(0); B.push(0); A.push(0)        // class 0 transparent
+    } else {
+      const col = segColorFor(_bcLabels[c] || '')
+      R.push(col[0]); G.push(col[1]); B.push(col[2]); A.push(255)
+    }
+  }
+  return { R, G, B, A, I, labels }
+}
+
+// Replace the canvas with the conformed T1 + the GM/WM segmentation shaded on top
+function displaySegmentation(conf, labData) {
+  try {
+    conf.colormap = 'gray'
+    conf.opacity = 1
+
+    // Label overlay sharing the T1 geometry
+    const labVol = conf.clone()
+    labVol.name = 'segmentation'
+    const lab8 = new Uint8Array(labData.length)
+    for (let i = 0; i < labData.length; i++) lab8[i] = labData[i]
+    labVol.img = lab8
+
+    ;[...nv.volumes].forEach(v => nv.removeVolume(v))   // drop MNI + atlas
+    nv.addVolume(conf)
+    nv.addVolume(labVol)
+    labVol.setColormapLabel(buildSegLUT())             // mirror the atlas colormap path
+
+    // Semi-transparent shading so the underlying brain stays visible
+    document.getElementById('slAtlasOpacity').value = 60
+    document.getElementById('chkShowAtlas').checked = true
+    applyAtlasVisibility()
+    document.getElementById('selOutline').value = '0'
+    nv.setAtlasOutline(0)
+    calibrateSliceSliders()
+    nv.updateGLVolume()
+    toast('Showing segmentation on your T1 — pick an atlas to return to template view')
+  } catch (e) {
+    console.error('overlay display failed', e)
+    toast('Computed volumes, but could not render the overlay: ' + (e.message || e), 'err')
+  }
+}
+
+function showSegResults(counts, fname) {
+  const cm3 = v => v / 1000   // 1 mm³ voxels ⇒ cm³ = voxels / 1000
+  let gmVox = 0, wmVox = 0, brainVox = 0
+  const rows = []
+  for (const c in counts) {
+    const ci = +c
+    const name = _bcLabels[ci] || `Class ${ci}`
+    if (ci === 0 || /background/i.test(name)) continue
+    const vox = counts[c]
+    brainVox += vox
+    if (/gr[ae]y|(^|\W)gm(\W|$)/i.test(name)) gmVox += vox
+    else if (/white|(^|\W)wm(\W|$)/i.test(name)) wmVox += vox
+    rows.push({ name, vox })
+  }
+  rows.sort((a, b) => b.vox - a.vox)
+
+  document.getElementById('vmContent').innerHTML = `
+    <div class="vm-sub">
+      ${fname} · brainchop fast model (model5_gw_ae) · 1 mm³ voxels.
+      <b>Rough estimate</b> from a quick, lower-accuracy model — not FSL-FAST quality.
+      Nothing was uploaded; this ran locally on your GPU. The classified tissue is
+      shaded on your T1 behind this dialog — adjust with the <b>Atlas opacity</b>
+      slider or hide it with <b>Show atlas</b>.
+    </div>
+    <div class="vm-summary">
+      <div class="vm-stat"><div class="k">Gray matter</div>
+        <div class="v">${fmtVol(cm3(gmVox))} <span class="u">cm³</span></div></div>
+      <div class="vm-stat"><div class="k">White matter</div>
+        <div class="v">${fmtVol(cm3(wmVox))} <span class="u">cm³</span></div></div>
+      <div class="vm-stat"><div class="k">Total brain</div>
+        <div class="v">${fmtVol(cm3(brainVox))} <span class="u">cm³</span></div></div>
+    </div>
+    <div class="vm-body"><table class="vol-table">
+      <thead><tr><th>Tissue</th><th>Voxels</th><th>cm³</th></tr></thead>
+      <tbody>${rows.map(r =>
+        `<tr><td><span style="display:inline-block;width:10px;height:10px;border-radius:2px;
+          margin-right:7px;vertical-align:middle;background:rgb(${segColorFor(r.name).join(',')})"></span>${r.name}</td>
+        <td>${r.vox.toLocaleString()}</td><td>${fmtVol(cm3(r.vox))}</td></tr>`).join('')}
+      </tbody>
+      <tfoot><tr class="total-row">
+        <td>Total brain</td><td>${brainVox.toLocaleString()}</td><td>${fmtVol(cm3(brainVox))}</td>
+      </tr></tfoot>
+    </table></div>`
+
+  setVmCsv(() => ({
+    filename: `gm_estimate_${fname.replace(/\.(nii|gz)+$/i, '')}.csv`,
+    text: 'Tissue,Voxels,Volume_cm3\n' +
+      rows.map(r => `"${r.name}",${r.vox},${cm3(r.vox).toFixed(2)}`).join('\n') +
+      `\nTotal brain,${brainVox},${cm3(brainVox).toFixed(2)}\n`,
+  }))
+  openVolModal('Brain volume estimate (rough)')
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  DIAGNOSTICS
+// ═══════════════════════════════════════════════════════════════════════
+function collectEnv() {
+  const L = []
+  L.push('Brain Atlas Viewer — diagnostics')
+  L.push('Generated : ' + new Date().toISOString())
+  L.push('URL       : ' + location.href)
+  L.push('UserAgent : ' + navigator.userAgent)
+  L.push('Platform  : ' + (navigator.platform || '?') + '  · cores ' + (navigator.hardwareConcurrency || '?') +
+         '  · mem ' + (navigator.deviceMemory || '?') + 'GB')
+  L.push('Viewport  : ' + innerWidth + 'x' + innerHeight + '  dpr ' + (devicePixelRatio || 1))
+  try {
+    const gl = nv && nv.gl
+    if (gl) {
+      const dbg = gl.getExtension('WEBGL_debug_renderer_info')
+      L.push('GL vendor : ' + (dbg ? gl.getParameter(dbg.UNMASKED_VENDOR_WEBGL) : gl.getParameter(gl.VENDOR)))
+      L.push('GL render : ' + (dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER)))
+      L.push('GL version: ' + gl.getParameter(gl.VERSION))
+      L.push('Hardware GPU (heuristic): ' + gradientRenderSupported())
+    } else { L.push('WebGL     : NiiVue not initialized') }
+  } catch (e) { L.push('WebGL probe failed: ' + e) }
+  L.push('NiiVue vols: ' + (nv ? nv.volumes.length : 'n/a') + '  · atlas ' + currentKey)
+  L.push('TF.js     : ' + (window.tf ? window.tf.version_core : 'not loaded') + '  · backend ' + _segBackend)
+  return L.join('\n')
+}
+
+function buildDiagnosticsReport() {
+  const log = window.__diag || []
+  const body = log.length
+    ? log.map(e => `[${e.t}] ${String(e.level).toUpperCase()}: ${e.msg}`).join('\n')
+    : '(no events logged)'
+  return collectEnv() + '\n\n── Event log (' + log.length + ') ──\n' + body + '\n'
+}
+
+function showDiagnostics() {
+  const report = buildDiagnosticsReport()
+  document.getElementById('vmContent').innerHTML =
+    '<div class="vm-sub">Environment and recent events. Click <b>Save log</b> to download a file you can share for debugging.</div>' +
+    '<div class="vm-body"><pre style="margin:0;padding:12px 16px;font-size:11px;line-height:1.5;' +
+    'white-space:pre-wrap;word-break:break-word;color:var(--text)">' +
+    report.replace(/</g, '&lt;') + '</pre></div>'
+  setVmCsv(() => ({ filename: `atlas_diagnostics_${Date.now()}.txt`, text: buildDiagnosticsReport() }), 'Save log')
+  openVolModal('Diagnostics')
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 //  INIT
 // ═══════════════════════════════════════════════════════════════════════
 async function init() {
@@ -1163,7 +2148,7 @@ async function init() {
   nv = new Niivue({
     show3Dcrosshair:  true,
     backColor:        [0, 0, 0, 1],
-    isOrientCube:     false,
+    isOrientCube:     true,   // L/R · A/P · S/I orientation cube on the 3D render
     onLocationChange: (data) => {
       document.getElementById('locationLabel').textContent = data.string
       if (!_syncingFromCanvas) updateSlidersFromCrosshair()
@@ -1178,6 +2163,10 @@ async function init() {
   nv.opts.yoke3Dto2DZoom        = true
   nv.opts.dragMode              = nv.dragModes.pan
   nv.setMultiplanarPadPixels(6)
+
+  // Disable gradient render modes if this GPU can't render them (avoids blank 3D)
+  gateRenderOptions()
+  diag('info', 'environment\n' + collectEnv())
 
   // ── Atlas selector ──────────────────────────────────────
   const atlasSelect = document.getElementById('atlasSelect')
@@ -1203,8 +2192,11 @@ async function init() {
   document.getElementById('fileCIT168').onchange= e => { if (e.target.files[0]) loadAtlas('cit168', e.target.files[0]) }
 
   // ── Display controls ────────────────────────────────────
+  document.getElementById('chkShowAtlas').onchange = () => applyAtlasVisibility()
   document.getElementById('slAtlasOpacity').oninput = () => {
-    if (nv.volumes.length > 1) nv.setOpacity(1, +document.getElementById('slAtlasOpacity').value / 100)
+    // Moving the slider implies you want the atlas visible
+    document.getElementById('chkShowAtlas').checked = true
+    applyAtlasVisibility()
   }
   document.getElementById('slBgOpacity').oninput = () => {
     if (nv.volumes.length > 0) nv.setOpacity(0, +document.getElementById('slBgOpacity').value / 100)
@@ -1213,7 +2205,7 @@ async function init() {
     nv.setAtlasOutline(+document.getElementById('selOutline').value)
   }
   document.getElementById('selRender').onchange = () => {
-    nv.setVolumeRenderIllumination(+document.getElementById('selRender').value)
+    setRenderIllumination(+document.getElementById('selRender').value)
   }
   document.getElementById('bgColor').oninput = () => {
     const h = document.getElementById('bgColor').value
@@ -1256,6 +2248,26 @@ async function init() {
   document.getElementById('btnScreenshot').onclick   = () => saveScreenshot()
   document.getElementById('btnFigureMode').onclick   = () => toggleFigureMode()
 
+  // ── Volume calculation ───────────────────────────────────
+  document.getElementById('btnRegionVol').onclick = () => computeRegionVolumes()
+  document.getElementById('btnRestoreAtlas').onclick = () => {
+    // Leave the segmentation view: restore the MNI152 + atlas display defaults
+    // that displaySegmentation() overrode, then reload the current atlas.
+    document.getElementById('slAtlasOpacity').value = 85
+    document.getElementById('chkShowAtlas').checked = true
+    document.getElementById('selOutline').value = '0.01'
+    loadAtlas(currentKey)
+  }
+  const fileT1 = document.getElementById('fileT1')
+  const btnSeg = document.getElementById('btnSegment')
+  fileT1.onchange = () => { btnSeg.disabled = !fileT1.files.length }
+  btnSeg.onclick  = () => { if (fileT1.files[0]) runSegmentation(fileT1.files[0]) }
+  document.getElementById('vmClose').onclick = closeVolModal
+  document.getElementById('vmDone').onclick  = closeVolModal
+  document.getElementById('vmCsv').onclick   = saveVolCsv
+  document.getElementById('btnDiag').onclick = () => showDiagnostics()
+  document.getElementById('volModal').onclick = e => { if (e.target.id === 'volModal') closeVolModal() }
+
   // ── Canvas events ────────────────────────────────────────
   const canvas = document.getElementById('gl1')
   canvas.addEventListener('mousemove', onMouseMove)
@@ -1275,6 +2287,740 @@ init().catch(err => {
   document.getElementById('loadingMsg').textContent = `Failed: ${err.message}`
   document.getElementById('loadingOverlay').classList.add('active')
 })
+</script>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     EXPLORE TAB  —  interactive Three.js brain (explode / highlight / networks)
+     Self-contained; lazy-initialised on first switch to the Explore tab.
+     Classic (non-module) script: runs immediately and is fully decoupled from
+     the NiiVue module above (which uses top-level await). Three.js is pulled in
+     lazily via dynamic import(), which works fine in a classic script.
+     ═══════════════════════════════════════════════════════════════════════ -->
+<script>
+// ───── Tab switching (independent of Three.js load) ─────
+const tabButtons = [...document.querySelectorAll('.tab-btn')]
+let exploreInited = false
+function switchTab(name) {
+  document.getElementById('view-figure').hidden  = name !== 'figure'
+  document.getElementById('view-explore').hidden = name !== 'explore'
+  tabButtons.forEach(b => b.classList.toggle('active', b.dataset.tab === name))
+  if (name === 'explore') {
+    if (!exploreInited) { exploreInited = true; initExplore() }  // initExplore kicks startAnim()
+    else startAnim()                                             // returning: resume the paused loop
+  }
+}
+tabButtons.forEach(b => (b.onclick = () => switchTab(b.dataset.tab)))
+
+// ───── Palettes ─────
+const LOBE_COLORS = {
+  Frontal: '#4e79a7', Parietal: '#59a14f', Temporal: '#e15759',
+  Occipital: '#b07aa1', Limbic: '#f28e2b', Subcortical: '#76b7b2',
+  Cerebellum: '#edc948', Other: '#8c8c8c',
+}
+const NETWORK_COLORS = {
+  Visual: '#9b59b6', Somatomotor: '#5da3e0', DorsalAttention: '#2ecc71',
+  Salience: '#e056fd', Limbic: '#f6c744', Frontoparietal: '#e67e22',
+  DefaultMode: '#e74c3c', Subcortical: '#16a085', Cerebellar: '#f1c40f',
+  Brainstem: '#95a5a6', Other: '#8c8c8c',
+}
+const HEMI_COLORS  = { L: '#4e79a7', R: '#e15759', M: '#b0b0b0' }
+const SINGLE_COLOR = '#aab4c0'
+function paletteFor(mode) {
+  return mode === 'lobe' ? LOBE_COLORS
+       : mode === 'network' ? NETWORK_COLORS
+       : mode === 'hemisphere' ? HEMI_COLORS : null
+}
+function colorForGroup(mode, key) {
+  const pal = paletteFor(mode)
+  return pal ? (pal[key] || '#888888') : SINGLE_COLOR
+}
+
+// ───── Learn-mode descriptions ─────
+// Keyed by the hemisphere-agnostic AAL3 base name (the _L/_R suffix is stripped
+// before lookup). Each entry: what the region is + what it does.
+const REGION_INFO = {
+  Precentral: "The primary motor cortex (M1), forming the precentral gyrus. It sends commands to the muscles of the opposite side of the body; its map of the body is the classic 'motor homunculus'.",
+  Frontal_Sup_2: "Superior frontal gyrus. Involved in higher cognition, working memory, and self-awareness; its medial part contributes to planning and motor control.",
+  Frontal_Mid_2: "Middle frontal gyrus, much of the dorsolateral prefrontal cortex. Central to working memory, attention, planning, and executive control of behavior.",
+  Frontal_Inf_Oper: "Inferior frontal gyrus, pars opercularis — part of Broca's area on the left. Supports speech production and the motor planning of language.",
+  Frontal_Inf_Tri: "Inferior frontal gyrus, pars triangularis — part of Broca's area on the left. Involved in language production, syntax, and semantic selection.",
+  Frontal_Inf_Orb_2: "Orbital part of the inferior frontal gyrus. Contributes to language, and to reward and emotional valuation via its orbitofrontal connections.",
+  Rolandic_Oper: "Rolandic operculum, covering the insula where motor/sensory cortex meets it. Involved in motor control of the face, mouth, swallowing, and speech articulation.",
+  Supp_Motor_Area: "Supplementary motor area (SMA). Plans and sequences movements, coordinates both hands, and helps initiate self-generated actions.",
+  Olfactory: "Olfactory cortex region. Processes the sense of smell and links odors to memory and emotion.",
+  Frontal_Sup_Medial: "Medial superior frontal gyrus, including pre-SMA and dorsomedial prefrontal cortex. Supports decision-making, social cognition, and the default-mode network.",
+  Frontal_Med_Orb: "Medial orbitofrontal cortex. Encodes reward value and supports emotion-based decision-making; a core default-mode region.",
+  Rectus: "Gyrus rectus, on the ventral medial frontal lobe. Part of the orbitofrontal system involved in emotion, reward, and social behavior.",
+  OFCmed: "Medial orbitofrontal cortex. Represents the value and pleasantness of rewards and guides choice.",
+  OFCant: "Anterior orbitofrontal cortex. Involved in reward valuation, expectation, and flexible decision-making.",
+  OFCpost: "Posterior orbitofrontal cortex. Integrates taste, smell, and emotion to evaluate outcomes.",
+  OFClat: "Lateral orbitofrontal cortex. Signals non-reward/punishment and supports behavioral flexibility and impulse control.",
+  Insula: "Insular cortex, buried in the lateral sulcus. Integrates interoception (body state), taste, pain, and emotion, and is a hub of the salience network.",
+  Cingulate_Mid: "Mid-cingulate cortex. Links emotion, pain, and cognitive control to action selection and conflict monitoring.",
+  Cingulate_Post: "Posterior cingulate cortex. A central default-mode hub involved in self-referential thought, memory retrieval, and awareness.",
+  ACC_pre: "Pregenual anterior cingulate cortex. Part of the salience/affective network involved in emotion regulation and error monitoring.",
+  ACC_sup: "Supracallosal (dorsal) anterior cingulate cortex. Supports cognitive control, conflict detection, and effort-based decisions.",
+  ACC_sub: "Subgenual anterior cingulate cortex. A key node for mood regulation, strongly implicated in depression.",
+  Hippocampus: "The hippocampus. Essential for forming new long-term memories and for spatial navigation.",
+  ParaHippocampal: "Parahippocampal gyrus. Feeds the hippocampus and supports memory encoding and the processing of spatial/scene context.",
+  Amygdala: "The amygdala. Detects emotional salience — especially fear and threat — and drives emotional learning and autonomic responses.",
+  Calcarine: "Primary visual cortex (V1), lining the calcarine sulcus. The first cortical stage of vision, mapping the visual field.",
+  Cuneus: "Cuneus, in the medial occipital lobe. Early visual area processing the lower visual field.",
+  Lingual: "Lingual gyrus. Visual area processing the upper visual field, color, and word/letter recognition.",
+  Occipital_Sup: "Superior occipital gyrus. Higher visual area contributing to spatial and motion vision (dorsal stream).",
+  Occipital_Mid: "Middle occipital gyrus. Higher visual area for object and motion processing.",
+  Occipital_Inf: "Inferior occipital gyrus. Early stage of the ventral 'what' stream for object and face recognition.",
+  Fusiform: "Fusiform gyrus. Specialized for recognizing faces, objects, and written words (the visual word form and fusiform face areas).",
+  Postcentral: "Primary somatosensory cortex (S1), the postcentral gyrus. Receives touch, pressure, and body-position signals from the opposite side of the body.",
+  Parietal_Sup: "Superior parietal lobule. Integrates sensation for spatial awareness, attention, and visually guided movement.",
+  Parietal_Inf: "Inferior parietal lobule. Multisensory hub for attention, number sense, tool use, and language.",
+  SupraMarginal: "Supramarginal gyrus. Involved in phonological processing, the perception of space, and interpreting gestures.",
+  Angular: "Angular gyrus. Integrates language, number, and memory; a default-mode hub for semantic processing and concept retrieval.",
+  Precuneus: "Precuneus, on the medial parietal lobe. A default-mode hub for self-awareness, visuospatial imagery, and episodic memory retrieval.",
+  Paracentral_Lobule: "Paracentral lobule. The medial extension of the motor and sensory cortices, controlling and sensing the lower limb and pelvic floor.",
+  Caudate: "Caudate nucleus, part of the basal ganglia (striatum). Involved in goal-directed action, learning, and the gating of movement and habits.",
+  Putamen: "Putamen, part of the basal ganglia (striatum). Regulates movement and motor learning within cortico-basal-ganglia loops.",
+  Pallidum: "Globus pallidus, a basal ganglia output nucleus. Tunes and inhibits motor signals to enable smooth, controlled movement.",
+  N_Acc: "Nucleus accumbens, part of the ventral striatum. The brain's reward and motivation center, central to pleasure, reinforcement, and addiction.",
+  Heschl: "Heschl's gyrus — primary auditory cortex. The first cortical stage for processing sound, including pitch and loudness.",
+  Temporal_Sup: "Superior temporal gyrus. Processes auditory information and, especially on the left (Wernicke's area), the comprehension of speech.",
+  Temporal_Pole_Sup: "Superior temporal pole. Part of the anterior temporal hub for semantic memory, social, and emotional processing.",
+  Temporal_Mid: "Middle temporal gyrus. Supports language and semantic memory, and (area MT) the perception of visual motion.",
+  Temporal_Pole_Mid: "Middle temporal pole. Anterior temporal region for semantic knowledge and social-emotional processing.",
+  Temporal_Inf: "Inferior temporal gyrus. The end of the ventral visual stream, central to recognizing objects, faces, and forms.",
+  VTA: "Ventral tegmental area, in the midbrain. Origin of dopamine pathways for reward, motivation, and reinforcement learning.",
+  Red_N: "Red nucleus, in the midbrain. Contributes to motor coordination, especially of the limbs, via the rubrospinal tract.",
+  Raphe_D: "Dorsal raphe nucleus, in the brainstem. The main source of serotonin to the forebrain, regulating mood, sleep, and arousal.",
+}
+
+const PREFIX_INFO = [
+  ["Thal", "Thalamic nucleus. The thalamus is the brain's central relay station, gating sensory and motor signals to the cortex and regulating arousal and consciousness."],
+  ["Cerebellum", "Cerebellar hemisphere lobule. The cerebellum coordinates movement — balance, timing, and precision — and the Crus lobules also contribute to cognition and language."],
+  ["Vermis", "Cerebellar vermis. The midline cerebellum that coordinates posture, balance, gait, and eye movements."],
+]
+
+const THAL_INFO = {
+  Thal_AV: "Anteroventral thalamic nucleus. Part of the Papez circuit — supports memory and spatial navigation.",
+  Thal_IL: "Intralaminar thalamic nuclei. Regulate arousal, alertness, and attention, and relay to the striatum.",
+  Thal_LGN: "Lateral geniculate nucleus. The thalamic relay that carries vision from the retina to the primary visual cortex.",
+  Thal_LP: "Lateral posterior thalamic nucleus. Connects with parietal cortex for spatial attention and integration.",
+  Thal_MDl: "Mediodorsal nucleus (lateral part). Relays to the prefrontal cortex, supporting cognition and emotion.",
+  Thal_MDm: "Mediodorsal nucleus (medial part). Connects with prefrontal/limbic cortex for memory, emotion, and decision-making.",
+  Thal_MGN: "Medial geniculate nucleus. The thalamic relay that carries hearing to the primary auditory cortex.",
+  Thal_PuA: "Pulvinar (anterior). Part of the pulvinar, integrating visual attention across cortical areas.",
+  Thal_PuI: "Pulvinar (inferior). Supports visual attention and the coordination of cortical visual processing.",
+  Thal_PuL: "Pulvinar (lateral). Involved in directing visual attention and binding visual information.",
+  Thal_PuM: "Pulvinar (medial). Links to attention, salience, and higher-order visual and cognitive processing.",
+  Thal_VA: "Ventral anterior nucleus. A basal-ganglia–to–cortex relay for initiating and planning movement.",
+  Thal_VL: "Ventral lateral nucleus. Relays cerebellar and basal-ganglia signals to motor cortex for movement coordination.",
+  Thal_VPL: "Ventral posterolateral nucleus. The thalamic relay for body touch and proprioception to somatosensory cortex.",
+}
+
+function infoFor(meta) {
+  const base = (meta.name.endsWith('_L') || meta.name.endsWith('_R'))
+    ? meta.name.slice(0, -2) : meta.name
+  if (THAL_INFO[base]) return THAL_INFO[base]
+  if (REGION_INFO[base]) return REGION_INFO[base]
+  for (const [pre, txt] of PREFIX_INFO) if (base.startsWith(pre)) return txt
+  return "An anatomical parcel of the AAL3 atlas. Hover and explore neighboring regions to see how it fits into the surrounding network."
+}
+const HEMI_NAME = { L: 'Left hemisphere', R: 'Right hemisphere', M: 'Midline' }
+
+// ───── State ─────
+let THREE, renderer, scene, camera, brain, raycaster, pointer, tmp
+let gizmoRenderer, gizmoScene, gizmoCamera, gizmoCube   // orientation cube
+let learnMode = false                                   // Learn-mode toggle
+let regions = []                 // { meta, mesh, baseColor }
+const byIndex = new Map()
+let colorBy = 'lobe'
+let hovered = null, selected = null
+let groupHidden = new Set()
+let spin = false
+let needsRender = true
+let exSearch = ''
+// Per-region explode (0..1) and opacity (0..1, <1 = glass) live on each mesh's
+// userData — a single source of truth. The global slider and the group sliders
+// are bulk writers over those, and per-region settings survive switching the
+// grouping mode (lobe / network / hemisphere).
+const K = 1.0, PUSH = 0.25       // explode: offset = (base*K + dir*PUSH) * amount
+const orb = { target: null, radius: 11, theta: 0, phi: 1.1 }
+let INIT_ORB = null
+let tweening = false, tweenStart = 0
+const TWEEN_DUR = 950
+
+// ───── Init ─────
+async function importThree() {
+  const cdns = [
+    'https://unpkg.com/three@0.160.0/build/three.module.js',
+    'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js',
+  ]
+  let last
+  for (const u of cdns) {
+    try { return await import(u) } catch (e) { last = e; console.warn('three CDN failed', u, e) }
+  }
+  throw new Error('Could not load Three.js from CDN.\n' + (last?.message || last))
+}
+
+async function initExplore() {
+  const msg = document.getElementById('exploreLoadingMsg')
+  try {
+    msg.textContent = 'Loading 3D engine…'
+    THREE = await importThree()
+    msg.textContent = 'Fetching brain meshes…'
+    const resp = await fetch('/meshes/brain_bundle.json')
+    if (!resp.ok) throw new Error('meshes/brain_bundle.json not found.\nRun:  python build_brain_bundle.py')
+    const bundle = await resp.json()
+    buildScene(bundle)
+    document.getElementById('exploreLoading').classList.remove('active')
+    startAnim()
+  } catch (e) {
+    console.error(e)
+    msg.style.color = 'var(--danger)'; msg.style.whiteSpace = 'pre-wrap'
+    msg.style.textAlign = 'center'; msg.style.padding = '0 24px'; msg.style.fontFamily = 'monospace'
+    msg.textContent = 'Error: ' + (e.message || e)
+  }
+}
+
+function b64decode(b64, Type) {
+  const bin = atob(b64), len = bin.length, buf = new Uint8Array(len)
+  for (let i = 0; i < len; i++) buf[i] = bin.charCodeAt(i)
+  return new Type(buf.buffer)
+}
+
+function buildScene(bundle) {
+  const canvas = document.getElementById('glExplore')
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: true })
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
+
+  scene = new THREE.Scene()
+  scene.background = new THREE.Color('#0b0e14')
+
+  camera = new THREE.PerspectiveCamera(45, 1, 0.05, 200)
+  camera.up.set(0, 0, 1)                 // MNI/OBJ space: +Z is superior
+  camera.position.set(6, -8, 5)
+
+  scene.add(new THREE.AmbientLight(0xffffff, 0.55))
+  const d1 = new THREE.DirectionalLight(0xffffff, 0.85); d1.position.set(5, -6, 8); scene.add(d1)
+  const d2 = new THREE.DirectionalLight(0x8899bb, 0.4);  d2.position.set(-6, 5, -3); scene.add(d2)
+
+  brain = new THREE.Group(); scene.add(brain)
+  raycaster = new THREE.Raycaster(); pointer = new THREE.Vector2(); tmp = new THREE.Vector3()
+  orb.target = new THREE.Vector3(0, 0, 0)
+
+  for (const r of bundle.regions) {
+    const geo = new THREE.BufferGeometry()
+    geo.setAttribute('position', new THREE.BufferAttribute(b64decode(r.positions, Float32Array), 3))
+    geo.setIndex(new THREE.BufferAttribute(b64decode(r.indices, Uint32Array), 1))
+    geo.computeVertexNormals()
+    // Phong instead of Standard/PBR: regions are flat solid colours (no
+    // metalness/roughness needed), so the cheaper shader saves fragment work
+    // across all ~162 meshes. Low shininess + dark specular keeps the matte look.
+    const mat = new THREE.MeshPhongMaterial({
+      color: 0xffffff, shininess: 8, specular: 0x111111, emissive: 0x000000,
+    })
+    const mesh = new THREE.Mesh(geo, mat)
+    const base = new THREE.Vector3(r.centroid[0], r.centroid[1], r.centroid[2])
+    mesh.userData = {
+      meta: r, base,
+      dir: base.lengthSq() > 1e-8 ? base.clone().normalize() : new THREE.Vector3(0, 0, 1),
+      userVisible: true,
+      explode: 0,      // per-region explode amount (0..1)
+      opacity: 1,      // per-region opacity (1 = solid, <1 = glass)
+    }
+    brain.add(mesh)
+    const rec = { meta: r, mesh, baseColor: new THREE.Color() }
+    regions.push(rec); byIndex.set(r.index, rec)
+  }
+
+  initOrbit(canvas)
+  buildGizmo()
+  setupUI()
+  applyColors()
+  applyExplode()
+
+  new ResizeObserver(() => resize()).observe(document.getElementById('exploreViewer'))
+  resize()
+}
+
+function resize() {
+  if (!renderer) return
+  const v = document.getElementById('exploreViewer')
+  const w = v.clientWidth || 1, h = v.clientHeight || 1
+  renderer.setSize(w, h, false)
+  camera.aspect = w / h; camera.updateProjectionMatrix()
+  needsRender = true
+}
+
+// ───── Orbit controls (Z-up, custom — no extra dependency) ─────
+function syncCam() {
+  const { target, radius, theta, phi } = orb
+  camera.position.set(
+    target.x + radius * Math.sin(phi) * Math.cos(theta),
+    target.y + radius * Math.sin(phi) * Math.sin(theta),
+    target.z + radius * Math.cos(phi))
+  camera.lookAt(target)
+  needsRender = true
+}
+function initOrbit(canvas) {
+  const off = camera.position.clone().sub(orb.target)
+  orb.radius = off.length()
+  orb.theta = Math.atan2(off.y, off.x)
+  orb.phi = Math.acos(Math.min(1, Math.max(-1, off.z / orb.radius)))
+  INIT_ORB = { radius: orb.radius, theta: orb.theta, phi: orb.phi }
+  syncCam()
+
+  let dragging = false, mode = 'rot', px = 0, py = 0, sx = 0, sy = 0
+  canvas.addEventListener('pointerdown', e => {
+    dragging = true; mode = (e.button === 2 || e.shiftKey) ? 'pan' : 'rot'
+    px = sx = e.clientX; py = sy = e.clientY; canvas.setPointerCapture(e.pointerId)
+  })
+  canvas.addEventListener('pointermove', e => {
+    onHover(e)
+    if (!dragging) return
+    const dx = e.clientX - px, dy = e.clientY - py; px = e.clientX; py = e.clientY
+    if (mode === 'rot') {
+      orb.theta -= dx * 0.006
+      orb.phi = Math.min(Math.PI - 0.05, Math.max(0.05, orb.phi - dy * 0.006))
+    } else {
+      const scale = orb.radius * 0.0016
+      const viewDir = tmp.subVectors(orb.target, camera.position).normalize()
+      const right = new THREE.Vector3().crossVectors(viewDir, camera.up).normalize()
+      const up = new THREE.Vector3().crossVectors(right, viewDir).normalize()
+      orb.target.addScaledVector(right, -dx * scale).addScaledVector(up, dy * scale)
+    }
+    syncCam()
+  })
+  const end = e => {
+    if (dragging && Math.hypot(e.clientX - sx, e.clientY - sy) < 4) handleClick(e)
+    dragging = false
+  }
+  canvas.addEventListener('pointerup', end)
+  canvas.addEventListener('pointercancel', () => (dragging = false))
+  canvas.addEventListener('contextmenu', e => e.preventDefault())
+  canvas.addEventListener('wheel', e => {
+    e.preventDefault()
+    orb.radius = Math.min(60, Math.max(2, orb.radius * (1 + Math.sign(e.deltaY) * 0.08)))
+    syncCam()
+  }, { passive: false })
+}
+function resetView() {
+  Object.assign(orb, INIT_ORB); orb.target.set(0, 0, 0); syncCam()
+}
+
+// ───── Orientation gizmo (labeled L/R · A/P · S/I cube) ─────
+function makeFaceTexture(label, bg) {
+  const c = document.createElement('canvas'); c.width = c.height = 128
+  const g = c.getContext('2d')
+  g.fillStyle = bg; g.fillRect(0, 0, 128, 128)
+  g.strokeStyle = 'rgba(255,255,255,0.28)'; g.lineWidth = 7; g.strokeRect(4, 4, 120, 120)
+  g.fillStyle = '#fff'; g.font = "bold 74px -apple-system, 'Segoe UI', sans-serif"
+  g.textAlign = 'center'; g.textBaseline = 'middle'
+  g.fillText(label, 64, 70)
+  const t = new THREE.CanvasTexture(c); t.anisotropy = 4
+  return t
+}
+function buildGizmo() {
+  const canvas = document.getElementById('glGizmo')
+  gizmoRenderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true })
+  gizmoRenderer.setPixelRatio(Math.min(devicePixelRatio, 2))
+  gizmoRenderer.setSize(84, 84, false)
+  gizmoScene = new THREE.Scene()
+  gizmoCamera = new THREE.PerspectiveCamera(40, 1, 0.1, 20)
+  gizmoCamera.up.set(0, 0, 1)
+  gizmoScene.add(new THREE.AmbientLight(0xffffff, 0.85))
+  const dl = new THREE.DirectionalLight(0xffffff, 0.6); dl.position.set(3, -4, 5); gizmoScene.add(dl)
+  // BoxGeometry material order is +X, -X, +Y, -Y, +Z, -Z.
+  // MNI/scene space: +X=Right, +Y=Anterior, +Z=Superior.
+  const faces = [
+    ['R', '#e15759'], ['L', '#4e79a7'],
+    ['A', '#59a14f'], ['P', '#434956'],
+    ['S', '#e0a33a'], ['I', '#434956'],
+  ]
+  const mats = faces.map(([lab, col]) =>
+    new THREE.MeshStandardMaterial({ map: makeFaceTexture(lab, col), roughness: 0.75 }))
+  gizmoCube = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), mats)
+  gizmoScene.add(gizmoCube)
+}
+function syncGizmo() {
+  if (!gizmoRenderer) return
+  // View the cube from the same direction the main camera views the brain,
+  // so the cube always reflects the current orientation.
+  const dir = tmp.subVectors(camera.position, orb.target).normalize()
+  gizmoCamera.position.copy(dir).multiplyScalar(3)
+  gizmoCamera.up.copy(camera.up)
+  gizmoCamera.lookAt(0, 0, 0)
+  gizmoRenderer.render(gizmoScene, gizmoCamera)
+}
+
+// ───── Picking / highlight ─────
+function pick(e) {
+  const rect = renderer.domElement.getBoundingClientRect()
+  pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1
+  pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1
+  raycaster.setFromCamera(pointer, camera)
+  const vis = regions.filter(r => r.mesh.visible).map(r => r.mesh)
+  const hits = raycaster.intersectObjects(vis, false)
+  return hits.length ? hits[0].object : null
+}
+function onHover(e) {
+  const m = pick(e)
+  if (m === hovered) return
+  hovered = m; applyHighlight()
+  const meta = m && m.userData.meta
+  document.getElementById('exploreHover').textContent = meta
+    ? `${meta.displayName}  ·  ${meta.lobe} / ${meta.network} / ${meta.hemisphere}`
+    : 'Hover a region to identify · drag to orbit · scroll to zoom'
+}
+function handleClick(e) { selectMesh(pick(e)) }
+function selectMesh(m) {
+  selected = m; applyHighlight(); updateListSelection(); updateLearnPanel()
+  document.getElementById('exploreSel').textContent = m ? `Selected: ${m.userData.meta.displayName}` : ''
+}
+// Single material-state updater: combines per-region opacity (glass), selection
+// focus dimming, and hover/selected emissive. Called after any colour, opacity,
+// or selection change.
+function applyHighlight() {
+  const focus = !!selected
+  for (const r of regions) {
+    const mat = r.mesh.material
+    const u = r.mesh.userData
+    const isSel = focus && r.mesh === selected
+    // Selecting a region dims every other region to focus on it; with nothing
+    // selected, each region shows at its own opacity (glass).
+    const op = focus ? (isSel ? 1 : 0.12) : u.opacity
+    mat.opacity = op
+    mat.transparent = op < 1
+    mat.depthWrite = op >= 1                  // translucent → don't occlude (see-through)
+    const glassy = !focus && u.opacity < 1    // glossy sheen for real glass, not focus-dimming
+    mat.shininess = glassy ? 80 : 8
+    mat.specular.setHex(glassy ? 0x5a6b7d : 0x111111)
+    mat.emissive.setHex(isSel ? 0x2554b0 : (hovered && r.mesh === hovered ? 0x444a55 : 0x000000))
+  }
+  needsRender = true
+}
+
+// ───── Colour / grouping / visibility ─────
+function groupKeyOf(r) { return colorBy === 'single' ? 'All' : r.meta[colorBy] }
+function applyColors() {
+  for (const r of regions) {
+    r.baseColor.set(colorForGroup(colorBy, groupKeyOf(r)))
+    r.mesh.material.color.copy(r.baseColor)
+  }
+  applyHighlight()
+}
+function applyVisibility() {
+  for (const r of regions)
+    r.mesh.visible = r.mesh.userData.userVisible && !groupHidden.has(groupKeyOf(r))
+  needsRender = true
+}
+function groupList() {
+  const counts = new Map()
+  for (const r of regions) { const k = groupKeyOf(r); counts.set(k, (counts.get(k) || 0) + 1) }
+  let keys = [...counts.keys()]
+  const pal = paletteFor(colorBy)
+  if (pal) {
+    const order = Object.keys(pal)
+    keys.sort((a, b) => (order.indexOf(a) + 1 || 99) - (order.indexOf(b) + 1 || 99))
+  } else keys.sort()
+  return keys.map(k => ({ key: k, count: counts.get(k) }))
+}
+function renderGroups() {
+  const el = document.getElementById('exGroupList')
+  if (colorBy === 'single') {
+    el.innerHTML = '<div class="file-hint">Single colour — no groups. Use the global Explode slider above, or the per-region sliders below.</div>'
+    return
+  }
+  // Events are delegated from #exGroupList (bound once in setupUI), so this can
+  // re-render freely without re-binding listeners.
+  el.innerHTML = groupList().map(g => {
+    const exp = Math.round(groupAvg(g.key, 'explode') * 100)
+    const op  = Math.round(groupAvg(g.key, 'opacity') * 100)
+    return `
+    <div class="group-item" data-key="${g.key}">
+      <div class="gi-top" title="Click to isolate this group">
+        <span class="g-swatch" style="background:${colorForGroup(colorBy, g.key)}"></span>
+        <span class="g-name${groupHidden.has(g.key) ? ' off' : ''}">${g.key}</span>
+        <span class="g-count">${g.count}</span>
+      </div>
+      <div class="gi-ctrls">
+        <span class="gi-lbl" title="Explode this group">⤢</span>
+        <input type="range" class="gi-exp" min="0" max="100" value="${exp}" title="Explode ${g.key}">
+        <span class="gi-lbl" title="Opacity / glass">◐</span>
+        <input type="range" class="gi-op" min="0" max="100" value="${op}" title="Opacity ${g.key}">
+      </div>
+    </div>`
+  }).join('')
+}
+function isolateGroup(key) {
+  const keys = groupList().map(g => g.key)
+  const onlyThis = groupHidden.size === keys.length - 1 && !groupHidden.has(key)
+  groupHidden = onlyThis ? new Set() : new Set(keys.filter(k => k !== key))
+  applyVisibility(); renderGroups(); renderRegionList()
+}
+
+// ───── Region list ─────
+// The list mirrors what is actually on screen: regions whose group has been
+// isolated away (groupHidden) are excluded, and the count reflects effective
+// (group × per-region) visibility — not just the per-region checkbox.
+function filtered() {
+  return regions.filter(r =>
+    (!exSearch || r.meta.displayName.toLowerCase().includes(exSearch)) &&
+    !groupHidden.has(groupKeyOf(r)))
+}
+function renderRegionList() {
+  const list = document.getElementById('exRegionList'), cnt = document.getElementById('exCount')
+  const shown = filtered()
+  const vis = regions.filter(r => r.mesh.visible).length
+  cnt.textContent = `${vis}/${regions.length} visible` + (exSearch ? ` — ${shown.length} match` : '')
+  if (!shown.length) { list.innerHTML = '<div class="empty-state">No matching regions</div>'; return }
+  // Events are delegated from #exRegionList (bound once in setupUI), so re-rendering
+  // here doesn't re-bind anything; slider values are re-derived from userData.
+  list.innerHTML = shown.map(r => {
+    const col = colorForGroup(colorBy, groupKeyOf(r))
+    const sel = selected && selected === r.mesh ? ' selected' : ''
+    const u = r.mesh.userData
+    const exp = Math.round(u.explode * 100), op = Math.round(u.opacity * 100)
+    return `<div class="region-item${sel}" data-idx="${r.meta.index}">
+      <div class="ri-top">
+        <input type="checkbox" ${u.userVisible ? 'checked' : ''} data-vis="${r.meta.index}">
+        <span class="g-swatch" style="background:${col}"></span>
+        <span class="r-name ${u.userVisible ? '' : 'off'}" title="${r.meta.displayName}">${r.meta.displayName}</span>
+      </div>
+      <div class="ri-ctrls">
+        <span class="ri-lbl" title="Explode">⤢</span>
+        <input type="range" class="ri-exp" min="0" max="100" value="${exp}">
+        <span class="ri-lbl" title="Opacity / glass">◐</span>
+        <input type="range" class="ri-op" min="0" max="100" value="${op}">
+      </div>
+    </div>`
+  }).join('')
+}
+function updateListSelection() {
+  document.querySelectorAll('#exRegionList .region-item').forEach(row =>
+    row.classList.toggle('selected', selected && byIndex.get(+row.dataset.idx)?.mesh === selected))
+}
+
+// ───── Learn mode ─────
+function setLearnMode(on) {
+  learnMode = on
+  const btn = document.getElementById('exLearn')
+  btn.classList.toggle('active', on)
+  btn.textContent = on ? 'Learn: on' : 'Learn'
+  document.getElementById('learnPanel').hidden = !on
+  if (on) updateLearnPanel()
+  resize()   // viewer width changed as the panel shows/hides
+}
+function updateLearnPanel() {
+  const panel = document.getElementById('learnPanel')
+  if (!learnMode) { panel.hidden = true; return }
+  panel.hidden = false
+  const body  = document.getElementById('learnBody')
+  const title = document.getElementById('learnTitle')
+  if (!selected) {
+    title.textContent = 'Learn mode'
+    body.innerHTML = '<div class="learn-empty">Click a brain area — in the 3D view or the region list below — to read what it is and what it does.</div>'
+    return
+  }
+  const meta = selected.userData.meta
+  title.textContent = meta.displayName
+  const lobeCol = colorForGroup('lobe', meta.lobe)
+  const netCol  = colorForGroup('network', meta.network)
+  const hemiCol = colorForGroup('hemisphere', meta.hemisphere)
+  body.innerHTML = `
+    <div class="learn-chips">
+      <span class="learn-chip"><span class="dot" style="background:${hemiCol}"></span>${HEMI_NAME[meta.hemisphere] || meta.hemisphere}</span>
+      <span class="learn-chip"><span class="dot" style="background:${lobeCol}"></span>${meta.lobe}</span>
+      <span class="learn-chip"><span class="dot" style="background:${netCol}"></span>${meta.network}</span>
+    </div>
+    <div class="learn-section-lbl">What it is &amp; what it does</div>
+    <p>${infoFor(meta)}</p>
+    <div class="learn-section-lbl">Atlas reference</div>
+    <p>${meta.name} · region #${meta.index} · AAL3 atlas.</p>
+    <div class="netmap-note" style="margin-top:14px;">Functional-network label is approximate (AAL3 to Yeo-style).</div>`
+}
+
+// ───── Explode / glass (per-region, with group + global bulk writers) ─────
+function applyExplode() {
+  for (const r of regions) {
+    const u = r.mesh.userData
+    r.mesh.position.copy(u.base).multiplyScalar(K).addScaledVector(u.dir, PUSH).multiplyScalar(u.explode)
+  }
+  needsRender = true
+}
+
+// Members of a group (for the current grouping) and the group's average of a
+// per-region attribute — used to position the group sliders.
+function membersOf(key) { return regions.filter(r => groupKeyOf(r) === key) }
+function groupAvg(key, prop) {
+  const m = membersOf(key)
+  return m.length ? m.reduce((s, r) => s + r.mesh.userData[prop], 0) / m.length : 0
+}
+function setGroupExplode(key, amt) { membersOf(key).forEach(r => (r.mesh.userData.explode = amt)); applyExplode() }
+function setGroupOpacity(key, op)  { membersOf(key).forEach(r => (r.mesh.userData.opacity = op));  applyHighlight() }
+
+// The global slider / buttons are bulk writers over every region.
+function setAllExplode(amt) { for (const r of regions) r.mesh.userData.explode = amt; applyExplode() }
+function globalExplodeAvg() {
+  return regions.length ? regions.reduce((s, r) => s + r.mesh.userData.explode, 0) / regions.length : 0
+}
+function setGlobalExplodeReadout() {
+  const p = Math.round(globalExplodeAvg() * 100)
+  document.getElementById('exExplode').value = p
+  document.getElementById('exExplodeRd').textContent = p + '%'
+}
+
+// Reflect current per-region values back into the group / region slider DOM
+// (after a bulk change) without re-rendering the lists.
+function syncGroupSliders() {
+  document.querySelectorAll('#exGroupList .group-item').forEach(it => {
+    const k = it.dataset.key
+    const e = it.querySelector('.gi-exp'); if (e) e.value = Math.round(groupAvg(k, 'explode') * 100)
+    const o = it.querySelector('.gi-op');  if (o) o.value = Math.round(groupAvg(k, 'opacity') * 100)
+  })
+}
+function syncRegionSliders() {
+  document.querySelectorAll('#exRegionList .region-item').forEach(row => {
+    const rec = byIndex.get(+row.dataset.idx); if (!rec) return
+    const u = rec.mesh.userData
+    const e = row.querySelector('.ri-exp'); if (e) e.value = Math.round(u.explode * 100)
+    const o = row.querySelector('.ri-op');  if (o) o.value = Math.round(u.opacity * 100)
+  })
+}
+
+// Per-region tween (Explode / Reassemble buttons): each region eases from its
+// current amount to the shared target, so groups already moved stay coherent.
+function tweenExplode(target) {
+  for (const r of regions) { const u = r.mesh.userData; u.expFrom = u.explode; u.expTo = target }
+  tweenStart = performance.now(); tweening = true
+}
+
+// ───── UI wiring ─────
+function setupUI() {
+  // The global slider/buttons set every region uniformly (bulk); group and
+  // per-region sliders then let you deviate. After a bulk change we sync the
+  // group/region slider DOM so they all agree.
+  const sl = document.getElementById('exExplode')
+  sl.oninput = () => {
+    tweening = false
+    document.getElementById('exExplodeRd').textContent = sl.value + '%'
+    setAllExplode(+sl.value / 100)
+    syncGroupSliders(); syncRegionSliders()
+  }
+  // "Whole" snaps instantly to assembled; "Reassemble" animates back; "Explode" animates out
+  document.getElementById('exWhole').onclick      = () => {
+    tweening = false
+    setAllExplode(0)
+    setGlobalExplodeReadout(); syncGroupSliders(); syncRegionSliders()
+  }
+  document.getElementById('exExplodeBtn').onclick = () => tweenExplode(1)
+  document.getElementById('exReassemble').onclick = () => tweenExplode(0)
+  document.getElementById('exSpin').onchange = e => { spin = e.target.checked; needsRender = true }
+
+  const cb = document.getElementById('exColorBy')
+  cb.onchange = () => {
+    colorBy = cb.value; groupHidden.clear()
+    document.getElementById('exNetNote').style.display = colorBy === 'network' ? '' : 'none'
+    applyColors(); applyVisibility(); renderGroups(); renderRegionList()
+  }
+  document.getElementById('exSearch').oninput = e => { exSearch = e.target.value.toLowerCase(); renderRegionList() }
+  document.getElementById('exAll').onclick  = () => { filtered().forEach(r => (r.mesh.userData.userVisible = true));  applyVisibility(); renderRegionList() }
+  document.getElementById('exNone').onclick = () => { filtered().forEach(r => (r.mesh.userData.userVisible = false)); applyVisibility(); renderRegionList() }
+  document.getElementById('exClearSel').onclick = () => selectMesh(null)
+  document.getElementById('exReset').onclick = () => resetView()
+  document.getElementById('exScreenshot').onclick = () => savePNG()
+  document.getElementById('exLearn').onclick = () => setLearnMode(!learnMode)
+  document.getElementById('learnClose').onclick = () => setLearnMode(false)
+  window.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && !document.getElementById('view-explore').hidden) selectMesh(null)
+  })
+
+  // ── Group list (delegated): isolate on header click, explode/opacity sliders ──
+  const groupEl = document.getElementById('exGroupList')
+  groupEl.addEventListener('click', e => {
+    if (e.target.closest('.gi-ctrls')) return            // sliders handle themselves
+    const top = e.target.closest('.gi-top'); if (!top) return
+    isolateGroup(top.closest('.group-item').dataset.key)
+  })
+  groupEl.addEventListener('input', e => {
+    const item = e.target.closest('.group-item'); if (!item) return
+    const key = item.dataset.key
+    if (e.target.classList.contains('gi-exp')) setGroupExplode(key, +e.target.value / 100)
+    else if (e.target.classList.contains('gi-op')) setGroupOpacity(key, +e.target.value / 100)
+    else return
+    syncRegionSliders(); setGlobalExplodeReadout()
+  })
+
+  // ── Region list (delegated): survives innerHTML re-renders ──
+  const regionEl = document.getElementById('exRegionList')
+  regionEl.addEventListener('input', e => {
+    const row = e.target.closest('.region-item'); if (!row) return
+    const rec = byIndex.get(+row.dataset.idx); if (!rec) return
+    if (e.target.classList.contains('ri-exp')) { rec.mesh.userData.explode = +e.target.value / 100; applyExplode() }
+    else if (e.target.classList.contains('ri-op')) { rec.mesh.userData.opacity = +e.target.value / 100; applyHighlight() }
+    else return
+    syncGroupSliders(); setGlobalExplodeReadout()
+  })
+  regionEl.addEventListener('change', e => {
+    if (!e.target.matches('input[data-vis]')) return
+    const rec = byIndex.get(+e.target.dataset.vis); if (!rec) return
+    rec.mesh.userData.userVisible = e.target.checked
+    applyVisibility(); renderRegionList()
+  })
+  regionEl.addEventListener('click', e => {
+    if (!e.target.closest('.r-name')) return
+    const row = e.target.closest('.region-item'); if (!row) return
+    const rec = byIndex.get(+row.dataset.idx); if (rec) selectMesh(rec.mesh)
+  })
+  regionEl.addEventListener('mouseover', e => {
+    const row = e.target.closest('.region-item'); if (!row) return
+    const rec = byIndex.get(+row.dataset.idx); if (rec && rec.mesh !== hovered) { hovered = rec.mesh; applyHighlight() }
+  })
+  regionEl.addEventListener('mouseout', e => {
+    const row = e.target.closest('.region-item'); if (!row || row.contains(e.relatedTarget)) return
+    hovered = null; applyHighlight()
+  })
+
+  renderGroups(); renderRegionList()
+}
+
+function savePNG() {
+  renderer.render(scene, camera)
+  const a = document.createElement('a')
+  a.href = renderer.domElement.toDataURL('image/png')
+  a.download = `brain_explore_${Date.now()}.png`
+  a.click()
+  exToast('PNG saved')
+}
+function exToast(msg, type) {
+  const el = document.getElementById('exploreToast')
+  el.textContent = msg; el.className = type === 'err' ? 'show err' : 'show'
+  clearTimeout(el._t); el._t = setTimeout(() => el.classList.remove('show'), 3000)
+}
+
+// ───── Render loop ─────
+// The loop only runs while the Explore tab is visible: when the tab is hidden
+// it stops scheduling frames (saving CPU/GPU/battery) and switchTab() restarts
+// it via startAnim() on the way back.
+let animRunning = false
+function startAnim() {
+  if (animRunning) return
+  animRunning = true
+  needsRender = true   // force a redraw on resume (buffer isn't preserved while hidden)
+  requestAnimationFrame(animate)
+}
+function animate() {
+  if (document.getElementById('view-explore').hidden) { animRunning = false; return }
+  requestAnimationFrame(animate)
+  if (tweening) {
+    const t = Math.min(1, (performance.now() - tweenStart) / TWEEN_DUR)
+    const e = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2   // easeInOutQuad
+    for (const r of regions) { const u = r.mesh.userData; u.explode = u.expFrom + (u.expTo - u.expFrom) * e }
+    applyExplode(); setGlobalExplodeReadout()
+    if (t >= 1) { tweening = false; syncGroupSliders(); syncRegionSliders() }
+  }
+  if (spin) { orb.theta += 0.0035; syncCam() }
+  if (needsRender) { renderer.render(scene, camera); syncGizmo(); needsRender = false }
+}
 </script>
 </body>
 </html>
