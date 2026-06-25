@@ -92,6 +92,14 @@ region meshes (`meshes/*.obj`):
   them smoothly back together; **Whole** snaps instantly to the fully assembled brain.
 * **Color / group by** anatomical lobe, hemisphere, or functional network; click
   a group to *isolate* it (hide the rest).
+* **White-matter tracts** — overlay wires that run *beneath* the cortex connecting
+  region centroids. Toggle them on, then filter to **all** tracts, only those
+  touching the **selected region**, or only those **within a functional network**.
+  Show/hide by connection type (commissural · association · local U-fibre ·
+  projection), and tune **density**, **thickness**, **opacity**, and tract
+  colouring. Make the gray matter glassy (◐ opacity) to see the wires underneath.
+  The connectivity is *schematic* — inferred from region geometry and network
+  labels as a teaching aid, **not** subject tractography.
 * **Hover** any region to identify it; **click** to select and dim the others.
 * Search + per-region show/hide; **Save PNG** of the 3-D view.
 * Drag to orbit, scroll to zoom, shift-drag (or right-drag) to pan.
@@ -109,6 +117,41 @@ This normalizes the meshes, computes per-region centroids, and tags each region
 with lobe / hemisphere / functional network. **Note:** the functional-network
 assignment (AAL3 → Yeo-style) is *approximate* and curated by region name — edit
 `NETWORK_MAP` in `build_brain_bundle.py` to refine it.
+
+## fMRI tab (time-course playback)
+
+The **fMRI** tab plays a *time × region* activation matrix back on the 3-D AAL3
+brain: as you scrub or play, each region is recoloured by its activation at that
+timepoint, so you watch different areas "light up" over the run.
+
+* **Transport (the feeder control)** — Play / Pause (or the spacebar), a frame
+  scrubber, a step-back-to-start button, a loop toggle, and a speed selector
+  (2–16 TR/s). A live time readout shows the current TR and seconds.
+* **Feeder / reference plot** — a trace docked under the render shows a reference
+  signal with a moving playhead; click the plot to seek. By default it's the task
+  design (dummy) or the global mean (uploaded data); tick **Feeder = selected
+  region** to drive it from whichever region you click. The selected region's own
+  time course is overlaid in gold.
+* **Triple-slice strip** — below the 3-D render, a NiiVue **axial / sagittal /
+  coronal** view (just like the Figure tab) shows the activation on real MNI152
+  slices, recoloured every timepoint in step with the 3-D brain. Drag in the
+  slices to move the crosshair. The 3-D meshes are AAL3 but the bundled slice
+  volume is AAL(116), so activation is mapped onto the atlas by region name
+  (≈108/116 regions match; a few AAL3-only parcels — orbital frontal splits,
+  some thalamic/cingulate names — stay transparent and show bare anatomy).
+* **Display** — choose a **Hot** (magnitude) or **Cool–warm** (signed) colour map,
+  set an activation **threshold** (regions below it stay dark) and an **intensity**
+  gain; a colour-scale legend reflects the current data range. These apply to both
+  the 3-D render and the slices.
+* **Bring your own data** — drop in an **activations CSV** (rows = timepoints,
+  columns = regions; columns are matched to AAL3 regions by header name, or by
+  order if there's no header and the count is 160) and/or a **feeder CSV** (one
+  value per timepoint). A **Reset to dummy** button restores the built-in demo.
+
+**Dummy data:** out of the box the tab shows a synthetic **block design** —
+functional networks switch on in turn, each region following its network's
+HRF-convolved boxcar with added noise, and the feeder is the task regressor. It's
+a teaching/demo signal, not real fMRI.
 
 ---
 
@@ -183,6 +226,53 @@ its atlas catalog informed which atlases this viewer ships labels for.
 ---
 
 ## Changelog
+
+### 2026-06-23
+
+**White-matter tracts (Explore tab, new)** — a selectable connectome overlay that
+draws wires *beneath* the gray matter, connecting AAL3 region centroids:
+
+* **Tubes routed under the cortex** — each tract is a tube whose midpoint bows
+  toward the brain interior, so it reads as a fibre running below the surface.
+  Endpoints are anchored to the assembled-brain centroids and the wires fade out
+  as the regions explode apart.
+* **Four connection classes**, each toggleable and individually coloured:
+  *commissural* (homotopic L↔R), *association* (long intra-network, same
+  hemisphere), *local* U-fibres (short, same lobe), and *projection* (subcortical
+  hub ↔ cortex). Generated client-side from the bundle's centroids + network /
+  lobe / hemisphere labels — no rebuild of `brain_bundle.json` needed.
+* **Show filters** — *all*, only tracts touching the **selected region**, or only
+  tracts **within a chosen functional network**. Wires also respect region
+  show/hide and group isolation.
+* **Sliders** for density (how many wires), thickness, and opacity; **colour by**
+  connection type / functional network / single colour.
+* Honestly labelled as *schematic* connectivity (a teaching aid), **not** subject
+  tractography — there's no DTI data in the app.
+
+**fMRI tab (new)** — a third tab that plays a *time × region* activation matrix
+back on the AAL3 brain, lighting up areas over time:
+
+* **Its own Three.js scene** sharing the cached `brain_bundle.json` and Three.js
+  import (refactored into a single `getBundle()` loader shared with Explore).
+* **Transport / feeder control** — Play/Pause (spacebar), frame scrubber, restart,
+  loop, and a 2–16 TR/s speed selector, with a TR/seconds readout.
+* **Feeder / reference plot** docked under the render, with a moving playhead and
+  click-to-seek; the selected region's time course is overlaid. The feeder can be
+  the task design (dummy), the global mean, an uploaded signal, or the selected
+  region.
+* **Hot / cool–warm colour maps**, an activation threshold, an intensity gain, and
+  a colour-scale legend.
+* **User data** — load an activations CSV (columns matched to regions by name or
+  order) and/or a feeder CSV; **Reset to dummy** restores the demo.
+* **Dummy** is a synthetic block design (networks activate in turn, HRF-smoothed,
+  noisy) so the tab is usable immediately — a teaching signal, not real fMRI.
+* **Triple-slice strip** — a NiiVue axial/sagittal/coronal view under the 3-D
+  render (like the Figure tab), showing the activation on MNI152 slices in sync
+  with playback. The bundled volume is AAL(116) while the meshes are AAL3, so
+  activation is name-mapped onto the atlas (≈108/116 regions; the rest stay
+  transparent). NiiVue classes are exposed from the module via `window.NiivueLib`
+  so the classic-script tab can build its own instance; failures degrade
+  gracefully (the 3-D view keeps working).
 
 ### 2026-06-17
 
