@@ -2,6 +2,28 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<!-- Content-Security-Policy (issues.md A4). script-src has NO 'unsafe-inline':
+     the app's three inline script blocks are allowed by SHA-256 hash, so any
+     injected inline script or event-handler attribute is refused. 'self' covers
+     the locally vendored modules (/vendor/); the public CDNs remain only for
+     the last-resort library fallback. 'unsafe-eval'/'wasm-unsafe-eval' + blob:
+     are required by TensorFlow.js (segmentation). If an inline script block
+     changes, run scripts/csp_hashes.py and update the three hashes below. -->
+<meta http-equiv="Content-Security-Policy" content="
+  default-src 'self';
+  script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval' blob:
+    https://unpkg.com https://cdn.jsdelivr.net
+    'sha256-s4Xk4cKOCv6jt1DHpK9zLceoUJS3mDTahWNNC96sG2k='
+    'sha256-77KSdALDynlFDES6LcaMdgHwOELBvgXu1YsUgUR+6Xc='
+    'sha256-OnjuzIe9Y6cZbD+9UwCocEPFttOGgkW11iUBB0K3m4k=';
+  worker-src 'self' blob:;
+  style-src 'self' 'unsafe-inline';
+  img-src 'self' data: blob:;
+  font-src 'self' data:;
+  connect-src 'self' https://unpkg.com https://cdn.jsdelivr.net https://raw.githubusercontent.com;
+  object-src 'none';
+  base-uri 'self';
+">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Brain Atlas Viewer</title>
 <style>
@@ -95,6 +117,43 @@ canvas#gl1 {
   color: var(--dim);
   margin-bottom: 5px;
 }
+
+/* ── Collapsible settings sections (accordion) ──────────────
+   Any section turned into a dropdown gets its header marked
+   .collapse-toggle and its remaining contents wrapped in
+   .collapse-body. Click (or Enter/Space) the header to fold. */
+.collapse-toggle {
+  cursor: pointer;
+  user-select: none;
+  position: relative;
+  padding-right: 16px;
+}
+.collapse-toggle:hover { color: var(--text); }
+.collapse-toggle::after {
+  content: '';
+  position: absolute;
+  right: 3px;
+  top: 50%;
+  width: 6px; height: 6px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: translateY(-65%) rotate(45deg);   /* chevron down (expanded) */
+  transition: transform 0.15s ease;
+  opacity: 0.7;
+}
+.collapsible.collapsed .collapse-toggle::after {
+  transform: translateY(-35%) rotate(-45deg);  /* chevron right (collapsed) */
+}
+.collapsible.collapsed .collapse-body { display: none; }
+/* keep the header's own bottom margin from adding a gap when folded */
+.collapsible.collapsed .collapse-toggle { margin-bottom: 0; }
+
+/* The region list is a flex-grow scroll area — its wrapped body must keep the
+   flex column so the list scrolls, and the panel must stop growing when folded. */
+#regionPanel .collapse-body {
+  display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden;
+}
+#regionPanel.collapsed { flex: 0 0 auto; min-height: 0; }
 
 /* ── Form elements ──────────────────────────────────────── */
 select, input[type="range"], input[type="text"] {
@@ -572,9 +631,14 @@ table.vol-table tr.total-row td {
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow-y: auto;            /* scroll the whole settings bar when it overflows */
+  overflow-x: hidden;
   flex-shrink: 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
 }
+#exploreSidebar::-webkit-scrollbar { width: 6px; }
+#exploreSidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 .ex-section {
   padding: 9px 14px 11px;
   border-bottom: 1px solid var(--border);
@@ -587,6 +651,20 @@ table.vol-table tr.total-row td {
   line-height: 1.4;
   font-style: italic;
 }
+/* White-matter tract controls (Explore tab) */
+.tract-hdr { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.tract-hdr .ctrl-lbl { flex: 1; font-weight: 600; }
+.tract-types { display: grid; grid-template-columns: 1fr 1fr; gap: 3px 10px; margin-top: 5px; }
+.tract-types label {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 11px; color: var(--text); cursor: pointer; user-select: none;
+}
+.tract-types label .tt-dot {
+  width: 9px; height: 9px; border-radius: 2px; flex-shrink: 0;
+  border: 1px solid rgba(255,255,255,0.2);
+}
+.tract-types input[type="checkbox"] { margin: 0; flex-shrink: 0; }
+#exTractPanel .ctrl-row input[type="range"] { accent-color: var(--accent); }
 #exGroupList { display: flex; flex-direction: column; gap: 1px; }
 .group-item {
   display: flex;
@@ -612,9 +690,28 @@ table.vol-table tr.total-row td {
   flex: 1; min-width: 0; height: 11px; margin: 0; cursor: pointer; accent-color: var(--accent);
 }
 
-#exRegionPanel { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
+/* Connections (arc arrows) */
+#exConnect.active { border-color: var(--accent); color: var(--accent); }
+.conn-hint { font-size: 10px; color: var(--accent); align-self: center; line-height: 1.2; }
+.conn-pick { display: flex; align-items: center; gap: 5px; margin-bottom: 8px; }
+.conn-pick select { flex: 1; min-width: 0; padding: 3px 4px; }
+.conn-arrow { color: var(--dim); font-size: 12px; flex-shrink: 0; }
+.arc-list { display: flex; flex-direction: column; gap: 1px; }
+.arc-item { display: flex; align-items: center; gap: 7px; padding: 3px 4px; border-radius: 4px; cursor: pointer; }
+.arc-item:hover { background: #1c2230; }
+.arc-item.selected { background: rgba(88,166,255,0.16); }
+.arc-dot { width: 11px; height: 11px; border-radius: 50%; flex-shrink: 0; border: 1px solid rgba(255,255,255,0.25); }
+.arc-label { flex: 1; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.arc-del { background: none; border: none; color: var(--dim); cursor: pointer; font-size: 15px; line-height: 1; padding: 0 2px; }
+.arc-del:hover { color: var(--danger); }
+.arc-editor { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
+.arc-editor .ctrl-row input[type="color"] { width: 28px; height: 18px; padding: 0; }
+
+/* Natural height (not flex:1) so the sidebar — not this panel — absorbs overflow
+   and scrolls; the region list keeps its own capped inner scroll. */
+#exRegionPanel { flex: 0 0 auto; display: flex; flex-direction: column; min-height: 0; }
 #exRegionList {
-  flex: 1; overflow-y: auto; overflow-x: hidden;
+  flex: 0 0 auto; max-height: 320px; overflow-y: auto; overflow-x: hidden;
   scrollbar-width: thin; scrollbar-color: var(--border) transparent;
 }
 #exRegionList::-webkit-scrollbar { width: 4px; }
@@ -768,6 +865,216 @@ canvas#glExplore { width: 100%; height: 100%; display: block; }
   font-size: 12px;
   line-height: 1.6;
 }
+
+/* ═══════════════ fMRI TAB ═══════════════ */
+#fmriSidebar {
+  width: 290px; min-width: 250px;
+  background: var(--panel); border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; overflow-y: auto; flex-shrink: 0;
+  scrollbar-width: thin; scrollbar-color: var(--border) transparent;
+}
+#fmriSidebar::-webkit-scrollbar { width: 4px; }
+#fmriSidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+.fm-section { padding: 9px 14px 11px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.fm-readout { font-size: 11px; color: var(--dim); font-variant-numeric: tabular-nums; }
+.fm-src-tag {
+  display: inline-block; font-size: 10px; padding: 1px 7px; border-radius: 9px;
+  background: rgba(88,166,255,0.14); color: var(--accent); border: 1px solid rgba(88,166,255,0.3);
+}
+.fm-file { display: block; font-size: 11px; color: var(--dim); margin-top: 7px; cursor: pointer; }
+.fm-file input { display: block; margin-top: 3px; font-size: 10px; max-width: 100%; }
+.fm-transport { display: flex; align-items: center; gap: 6px; margin-top: 7px; }
+.fm-transport button { flex: 0 0 auto; padding: 5px 9px; }
+#fmPlay { min-width: 64px; }
+
+/* Viewer is a vertical stack: 3-D render · slice strip · feeder plot · status */
+#fmriViewer { flex: 1; display: flex; flex-direction: column; background: #000; overflow: hidden; }
+#fmriRender { position: relative; flex: 1 1 auto; min-height: 0; background: #000; }
+canvas#glFmri { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+#fmriToolbar { position: absolute; top: 10px; right: 10px; display: flex; gap: 6px; z-index: 50; }
+#fmriLoading {
+  position: absolute; inset: 0; background: rgba(13,17,23,0.92);
+  display: none; flex-direction: column; align-items: center; justify-content: center;
+  gap: 14px; z-index: 100;
+}
+#fmriLoading.active { display: flex; }
+#fmriToast {
+  position: absolute; top: 12px; left: 50%; transform: translateX(-50%) translateY(-6px);
+  background: var(--panel2); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 7px 14px; font-size: 12px; color: var(--text);
+  opacity: 0; transition: opacity 0.2s, transform 0.2s; z-index: 200;
+  white-space: nowrap; pointer-events: none;
+}
+#fmriToast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+#fmriToast.err { border-color: var(--danger); }
+
+/* Colour-scale legend (top-left of the render) */
+#fmriLegend {
+  position: absolute; top: 10px; left: 10px; z-index: 40;
+  background: rgba(13,17,23,0.78); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 7px 9px; font-size: 10px; color: var(--dim); pointer-events: none; user-select: none;
+}
+#fmriLegend .lg-bar { height: 8px; width: 130px; border-radius: 3px; margin: 4px 0 2px; }
+#fmriLegend .lg-ends { display: flex; justify-content: space-between; }
+
+/* Triple-slice strip (NiiVue multiplanar: axial · sagittal · coronal) */
+#fmriSliceStrip {
+  flex: 0 0 172px; position: relative; background: #000;
+  border-top: 1px solid var(--border);
+}
+#fmriSliceStrip.hidden { display: none; }
+canvas#fmriSlices { width: 100%; height: 100%; display: block; }
+#fmriSliceHint {
+  position: absolute; top: 5px; left: 9px; z-index: 5;
+  font-size: 10px; color: var(--dim); pointer-events: none; user-select: none;
+  background: rgba(13,17,23,0.55); padding: 1px 6px; border-radius: 4px;
+}
+#fmriSliceMsg {
+  position: absolute; inset: 0; display: none; align-items: center; justify-content: center;
+  font-size: 11px; color: var(--dim); text-align: center; padding: 0 18px; line-height: 1.5;
+}
+
+/* Feeder / reference-signal plot */
+#fmriPlotWrap {
+  flex: 0 0 auto; position: relative;
+  background: rgba(13,17,23,0.92); border-top: 1px solid var(--border); padding: 5px 10px 7px;
+}
+#fmriPlotHdr { display: flex; align-items: center; gap: 12px; font-size: 11px; color: var(--dim); margin-bottom: 3px; }
+#fmriPlotHdr .legend-item { display: flex; align-items: center; }
+#fmriPlotHdr .swatch { width: 18px; height: 3px; border-radius: 2px; display: inline-block; vertical-align: middle; margin-right: 5px; }
+canvas#fmriPlot { width: 100%; height: 78px; display: block; cursor: pointer; }
+#fmriStatus {
+  flex: 0 0 22px; background: rgba(13,17,23,0.82);
+  border-top: 1px solid var(--border); display: flex; align-items: center;
+  padding: 0 10px; font-size: 11px; color: var(--dim); gap: 14px;
+  user-select: none;
+}
+
+/* ═══════════════ COLLECTION PANEL (floating, cross-tab) ═══════════════ */
+#viewPanel {
+  position: fixed; top: 58px; right: 14px; width: 268px; z-index: 250;
+  background: rgba(22,27,34,0.94); backdrop-filter: blur(8px);
+  border: 1px solid var(--border); border-radius: 10px;
+  box-shadow: 0 8px 28px rgba(0,0,0,0.5);
+  display: flex; flex-direction: column; max-height: calc(100vh - 80px);
+  font-size: 12px; color: var(--text); user-select: none;
+}
+#viewPanel.collapsed .vp-body, #viewPanel.collapsed .vp-footer { display: none; }
+.vp-header {
+  display: flex; align-items: center; gap: 6px; padding: 8px 10px;
+  cursor: move; border-bottom: 1px solid var(--border);
+}
+#viewPanel.collapsed .vp-header { border-bottom: none; }
+.vp-header .vp-grip { color: var(--dim); font-size: 13px; line-height: 1; }
+.vp-header .vp-title { font-weight: 600; letter-spacing: .02em; }
+.vp-header .vp-count { color: var(--dim); font-variant-numeric: tabular-nums; }
+.vp-header .vp-collapse {
+  margin-left: auto; cursor: pointer; color: var(--dim);
+  background: none; border: none; font-size: 14px; padding: 0 2px; line-height: 1;
+}
+.vp-header .vp-collapse:hover { color: var(--text); }
+.vp-body { overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 8px; }
+.vp-body::-webkit-scrollbar { width: 5px; }
+.vp-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+.vp-empty { color: var(--dim); text-align: center; padding: 18px 8px; font-size: 11px; line-height: 1.5; }
+.vp-item {
+  display: flex; gap: 8px; align-items: stretch; background: var(--panel2);
+  border: 1px solid var(--border); border-radius: 7px; padding: 6px; position: relative;
+}
+.vp-item.drag-over { border-color: var(--accent); }
+.vp-item.dragging { opacity: .4; }
+.vp-item .vp-thumb {
+  width: 78px; height: 58px; flex: 0 0 auto; border-radius: 4px; background: #000;
+  object-fit: contain; cursor: grab;
+}
+.vp-item .vp-info { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
+.vp-item .vp-badge {
+  align-self: flex-start; font-size: 9px; text-transform: uppercase; letter-spacing: .04em;
+  padding: 1px 6px; border-radius: 999px; background: var(--bg); color: var(--accent);
+  border: 1px solid var(--border);
+}
+.vp-item .vp-cap {
+  font-size: 11px; color: var(--text); line-height: 1.3; outline: none; word-break: break-word;
+  border-radius: 3px; padding: 1px 2px; cursor: text;
+}
+.vp-item .vp-cap:hover { background: rgba(255,255,255,0.04); }
+.vp-item .vp-cap:focus { background: var(--bg); box-shadow: 0 0 0 1px var(--accent); }
+.vp-item .vp-sub { font-size: 9px; color: var(--dim); margin-top: auto; }
+.vp-item .vp-remove {
+  position: absolute; top: 4px; right: 4px; width: 16px; height: 16px; border-radius: 50%;
+  border: none; background: rgba(0,0,0,0.45); color: var(--dim); cursor: pointer;
+  font-size: 12px; line-height: 14px; padding: 0; opacity: 0; transition: opacity .15s;
+}
+.vp-item:hover .vp-remove { opacity: 1; }
+.vp-item .vp-remove:hover { color: var(--danger); }
+.vp-footer { border-top: 1px solid var(--border); padding: 8px; display: flex; flex-direction: column; gap: 7px; }
+.vp-btn {
+  width: 100%; padding: 7px 8px; border-radius: 6px; border: 1px solid var(--border);
+  background: var(--panel); color: var(--text); cursor: pointer; font-size: 12px; font-weight: 500;
+}
+.vp-btn:hover { border-color: var(--accent); color: var(--accent); }
+.vp-btn.primary { background: var(--accent-dark); border-color: var(--accent-dark); color: #fff; }
+.vp-btn.primary:hover { background: var(--accent); border-color: var(--accent); color: #fff; }
+.vp-btn:disabled { opacity: .45; cursor: default; border-color: var(--border); color: var(--dim); }
+.vp-row { display: flex; gap: 7px; align-items: center; }
+.vp-row .vp-btn { width: auto; flex: 1; }
+.vp-opts { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--dim); }
+.vp-opts select {
+  background: var(--bg); color: var(--text); border: 1px solid var(--border);
+  border-radius: 5px; padding: 2px 4px; font-size: 11px;
+}
+.vp-opts label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+.vp-status { font-size: 10px; color: var(--dim); min-height: 13px; text-align: center; }
+.vp-status.err { color: var(--danger); }
+.vp-status.ok { color: var(--accent); }
+/* ── CLI Export panel + modal ───────────────────────── */
+#exportCliPanel {
+  padding: 8px 14px 10px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+  background: var(--bg);
+}
+#exportCliPanel button { width: 100%; }
+
+#cliModal {
+  position: fixed; inset: 0; z-index: 300;
+  background: rgba(13,17,23,0.82);
+  display: none; align-items: center; justify-content: center;
+  padding: 24px;
+}
+#cliModal.active { display: flex; }
+.cli-card {
+  background: #161b22; border: 1px solid var(--border); border-radius: 8px;
+  width: min(620px, 96vw); max-height: 90vh;
+  display: flex; flex-direction: column; overflow: hidden;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.55);
+}
+.cli-head {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 12px 16px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.cli-head h2 { font-size: 14px; font-weight: 600; margin: 0; color: var(--text); }
+.cli-head button {
+  background: none; border: none; color: var(--dim); font-size: 20px;
+  line-height: 1; cursor: pointer; padding: 0 4px; width: auto;
+}
+.cli-head button:hover { color: var(--text); background: none; }
+.cli-body { padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; }
+.cli-section-lbl {
+  font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.8px; color: var(--dim); margin-top: 4px;
+}
+.cli-warn {
+  font-size: 11px; color: #e3b341;
+  background: rgba(227,179,65,0.1); border: 1px solid rgba(227,179,65,0.3);
+  border-radius: 4px; padding: 6px 8px; line-height: 1.4;
+}
+#cliCmdText, #cliJsonText {
+  width: 100%; background: #0d1117; border: 1px solid var(--border);
+  border-radius: 4px; color: var(--text);
+  font-family: 'Cascadia Code', 'Consolas', 'Monaco', monospace;
+  font-size: 11px; padding: 8px; resize: vertical; line-height: 1.5;
+}
 </style>
 </head>
 <body>
@@ -776,7 +1083,8 @@ canvas#glExplore { width: 100%; height: 100%; display: block; }
 <!-- ═══════════════ TAB BAR ═══════════════ -->
 <div id="tabBar">
   <button class="tab-btn active" data-tab="figure">Figure</button>
-  <button class="tab-btn" data-tab="explore">Explore</button>
+  <button class="tab-btn" data-tab="explore">Advanced view</button>
+  <button class="tab-btn" data-tab="fmri">fMRI</button>
 </div>
 
 <div id="tabContent">
@@ -838,6 +1146,7 @@ canvas#glExplore { width: 100%; height: 100%; display: block; }
 
   <!-- Region list -->
   <div id="regionPanel">
+    <div class="label-xs" style="padding:7px 14px 4px;">Regions</div>
     <div class="rp-search">
       <input type="text" id="regionSearch" placeholder="Search regions…">
     </div>
@@ -950,6 +1259,15 @@ canvas#glExplore { width: 100%; height: 100%; display: block; }
 
     <button id="btnDiag" style="margin-top:8px;">Diagnostics / error log</button>
   </div>
+
+  <!-- Export CLI command -->
+  <div id="exportCliPanel">
+    <div class="label-xs">Export</div>
+    <button id="btnExportCli">Export CLI command</button>
+    <div id="cliAtlasNote" style="display:none;font-size:10px;color:#e3b341;margin-top:5px;line-height:1.4;">
+      3D mesh rendering requires AAL/AAL3 atlas. Slice panels export correctly for any atlas.
+    </div>
+  </div>
 </aside>
 
 <!-- ═══════════════ VIEWER ═══════════════ -->
@@ -988,6 +1306,31 @@ canvas#glExplore { width: 100%; height: 100%; display: block; }
     </div>
   </div>
 </div>
+<!-- ═══════════════ CLI EXPORT MODAL ═══════════════ -->
+<div id="cliModal">
+  <div class="cli-card">
+    <div class="cli-head">
+      <h2>Export CLI command</h2>
+      <button id="btnCliClose" title="Close">&times;</button>
+    </div>
+    <div class="cli-body">
+      <div id="cliWarnBanner" class="cli-warn" style="display:none;">
+        Note: 3D mesh rendering (figure 3D panel) requires AAL/AAL3 atlas.
+        Slice panels still export correctly for any atlas.
+      </div>
+      <div class="cli-section-lbl">Command</div>
+      <textarea id="cliCmdText" readonly rows="3"></textarea>
+      <div class="btn-row">
+        <button id="btnCliCopyCmd">Copy command</button>
+        <button id="btnCliCopyJson">Copy JSON</button>
+        <button id="btnCliDownload">Download .json</button>
+      </div>
+      <div class="cli-section-lbl">Preset JSON</div>
+      <textarea id="cliJsonText" readonly rows="16"></textarea>
+    </div>
+  </div>
+</div>
+
 </div><!-- #view-figure -->
 
 <!-- ═══════════════ EXPLORE VIEW ═══════════════ -->
@@ -1001,7 +1344,7 @@ canvas#glExplore { width: 100%; height: 100%; display: block; }
           <path d="M4 8 Q6 4 8 8 Q10 12 12 8" stroke="#58a6ff" stroke-width="1.2" fill="none" stroke-linecap="round"/>
           <circle cx="8" cy="8" r="1.5" fill="#58a6ff"/>
         </svg>
-        Explore
+        Advanced view
       </h1>
     </div>
 
@@ -1038,10 +1381,103 @@ canvas#glExplore { width: 100%; height: 100%; display: block; }
       </div>
     </div>
 
+    <!-- Rendering performance -->
+    <div class="ex-section">
+      <div class="label-xs">Performance</div>
+      <div class="ctrl-row" style="margin-top:6px;">
+        <span class="ctrl-lbl" title="Lower = fewer triangles = lighter load on slower machines">Mesh quality</span>
+        <select id="exMeshQuality">
+          <option value="high" selected>High (full detail)</option>
+          <option value="medium">Medium</option>
+          <option value="low">Low</option>
+          <option value="vlow">Very low (fastest)</option>
+        </select>
+      </div>
+      <div class="netmap-note" style="margin-top:6px;">
+        Simplifies every brain mesh to fewer triangles. Drop this if orbiting feels
+        sluggish; raise it back to High for clean figures &amp; screenshots.
+      </div>
+    </div>
+
+    <!-- White-matter tracts -->
+    <div class="ex-section">
+      <label class="tract-hdr">
+        <span class="ctrl-lbl">White-matter tracts</span>
+        <input type="checkbox" id="exTractShow">
+      </label>
+
+      <div id="exTractPanel" hidden>
+        <div class="netmap-note" style="margin-top:7px;">
+          Wires run beneath the cortex, connecting region centroids. Make the
+          gray matter glassy (◐ opacity) to see them underneath.
+        </div>
+
+        <div class="label-xs" style="margin-top:9px;">Show</div>
+        <select id="exTractFilter">
+          <option value="all">All tracts</option>
+          <option value="selected">Selected region only</option>
+          <option value="network">Within a functional network</option>
+        </select>
+        <select id="exTractNetwork" hidden style="margin-top:6px;"></select>
+
+        <div class="label-xs" style="margin-top:10px;">Connection types</div>
+        <div class="tract-types">
+          <label><input type="checkbox" id="exTractCommissural" checked><span class="tt-dot" style="background:#e15759"></span>Commissural</label>
+          <label><input type="checkbox" id="exTractAssociation" checked><span class="tt-dot" style="background:#4e79a7"></span>Association</label>
+          <label><input type="checkbox" id="exTractLocal" checked><span class="tt-dot" style="background:#59a14f"></span>Local U-fibers</label>
+          <label><input type="checkbox" id="exTractProjection" checked><span class="tt-dot" style="background:#f28e2b"></span>Projection</label>
+        </div>
+
+        <div class="ctrl-row" style="margin-top:10px;">
+          <span class="ctrl-lbl">Density</span>
+          <input type="range" id="exTractDensity" min="0" max="100" value="45">
+        </div>
+        <div class="ctrl-row">
+          <span class="ctrl-lbl">Thickness</span>
+          <input type="range" id="exTractThick" min="1" max="100" value="35">
+        </div>
+        <div class="ctrl-row">
+          <span class="ctrl-lbl">Opacity</span>
+          <input type="range" id="exTractOpacity" min="10" max="100" value="85">
+        </div>
+        <div class="ctrl-row">
+          <span class="ctrl-lbl">Color by</span>
+          <select id="exTractColor">
+            <option value="type">Connection type</option>
+            <option value="network">Functional network</option>
+            <option value="single">Single color</option>
+          </select>
+        </div>
+
+        <div class="rp-count" id="exTractCount" style="padding:6px 0 0;"></div>
+        <div class="netmap-note">
+          Schematic connectivity inferred from region geometry and network
+          labels — a teaching aid, not subject tractography.
+        </div>
+      </div>
+    </div>
+
     <!-- Groups -->
     <div class="ex-section">
       <div class="label-xs">Groups <span style="font-weight:400;text-transform:none;letter-spacing:0;">— click name to isolate · ⤢ explode · ◐ opacity</span></div>
       <div id="exGroupList"></div>
+    </div>
+
+    <!-- Connections (arc arrows between regions) -->
+    <div class="ex-section">
+      <div class="label-xs">Connections <span style="font-weight:400;text-transform:none;letter-spacing:0;">— arcs between regions</span></div>
+      <div class="btn-row" style="margin-bottom:7px;">
+        <button id="exConnect">+ Connect</button>
+        <span id="exConnectHint" class="conn-hint"></span>
+      </div>
+      <div class="conn-pick">
+        <select id="exArcFrom" title="Source region"></select>
+        <span class="conn-arrow">→</span>
+        <select id="exArcTo" title="Target region"></select>
+        <button id="exArcAdd" class="btn-primary" title="Add arc">Add</button>
+      </div>
+      <div id="exArcList" class="arc-list"></div>
+      <div id="exArcEditor" class="arc-editor" style="display:none;"></div>
     </div>
 
     <!-- Region search list -->
@@ -1091,8 +1527,188 @@ canvas#glExplore { width: 100%; height: 100%; display: block; }
   </main>
 </div><!-- #view-explore -->
 
+<!-- ═══════════════ fMRI VIEW ═══════════════ -->
+<div class="tab-view" id="view-fmri" hidden>
+
+  <aside id="fmriSidebar">
+    <div class="s-header">
+      <h1>
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <circle cx="8" cy="8" r="7" stroke="#58a6ff" stroke-width="1.5"/>
+          <path d="M2 9 L5 9 L6.5 4.5 L8.5 12 L10 9 L14 9" stroke="#58a6ff" stroke-width="1.3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        fMRI
+      </h1>
+    </div>
+
+    <!-- Data source -->
+    <div class="fm-section">
+      <div class="label-xs">Data source</div>
+      <div style="margin-top:6px;">Using <span class="fm-src-tag" id="fmSrcTag">Dummy (block design)</span></div>
+      <div class="fm-readout" id="fmDataInfo" style="margin-top:6px;"></div>
+
+      <label class="fm-file">Load activations — CSV (rows = timepoints, columns = regions) or a 4-D fMRI NIfTI (.nii / .nii.gz, MNI space)
+        <input type="file" id="fmActFile" accept=".csv,.tsv,.txt,.nii,.gz">
+      </label>
+      <label class="fm-file">Load feeder / reference CSV (one value per timepoint)
+        <input type="file" id="fmFeedFile" accept=".csv,.tsv,.txt">
+      </label>
+      <div class="btn-row" style="margin-top:8px;">
+        <button id="fmResetData">Reset to dummy</button>
+      </div>
+      <div class="netmap-note">
+        The dummy is a synthetic block design: functional networks switch on in
+        turn (HRF-smoothed, with noise). Replace it with your own time courses
+        any time — columns are matched to AAL3 regions by name or by order.
+      </div>
+    </div>
+
+    <!-- Playback (the feeder control) -->
+    <div class="fm-section">
+      <div class="label-xs">Playback</div>
+      <div class="fm-transport">
+        <button id="fmPlay" class="btn-primary">▶ Play</button>
+        <button id="fmStop" title="Back to start">⏮</button>
+        <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--dim);margin-left:auto;">
+          <input type="checkbox" id="fmLoop" checked> loop
+        </label>
+      </div>
+      <div class="ctrl-row" style="margin-top:9px;">
+        <span class="ctrl-lbl">Frame</span>
+        <input type="range" id="fmScrub" min="0" max="100" value="0">
+      </div>
+      <div class="fm-readout" id="fmTime" style="margin-top:2px;">TR 0 / 0 · 0.0 s</div>
+      <div class="ctrl-row" style="margin-top:9px;">
+        <span class="ctrl-lbl">Speed</span>
+        <select id="fmSpeed">
+          <option value="2">2 TR/s</option>
+          <option value="4" selected>4 TR/s</option>
+          <option value="8">8 TR/s</option>
+          <option value="16">16 TR/s</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Display -->
+    <div class="fm-section">
+      <div class="label-xs">Display</div>
+      <div class="ctrl-row" style="margin-top:6px;">
+        <span class="ctrl-lbl">Colour map</span>
+        <select id="fmCmap">
+          <option value="hot">Hot (magnitude)</option>
+          <option value="coolwarm">Cool–warm (signed)</option>
+        </select>
+      </div>
+      <div class="ctrl-row">
+        <span class="ctrl-lbl">Threshold</span>
+        <input type="range" id="fmThresh" min="0" max="90" value="20">
+        <span class="mm-readout" id="fmThreshRd">0.20</span>
+      </div>
+      <div class="ctrl-row">
+        <span class="ctrl-lbl">Intensity</span>
+        <input type="range" id="fmGain" min="20" max="200" value="100">
+      </div>
+      <div class="ctrl-row" style="margin-top:7px;">
+        <span class="ctrl-lbl" title="Lower = fewer triangles = lighter load on slower machines">Mesh quality</span>
+        <select id="fmMeshQuality">
+          <option value="high" selected>High (full detail)</option>
+          <option value="medium">Medium</option>
+          <option value="low">Low</option>
+          <option value="vlow">Very low (fastest)</option>
+        </select>
+      </div>
+      <div class="ctrl-row" style="margin-top:7px;">
+        <span class="ctrl-lbl">Feeder = selected region</span>
+        <input type="checkbox" id="fmFeedSel">
+      </div>
+      <div class="netmap-note">
+        Click a region in the 3-D view to inspect its time course (shown on the
+        plot). Tick the box to drive the feeder line from the selected region.
+      </div>
+    </div>
+  </aside>
+
+  <main id="fmriViewer">
+    <div id="fmriRender">
+      <canvas id="glFmri"></canvas>
+
+      <div id="fmriToolbar">
+        <button class="overlay-btn" id="fmReset">Reset view</button>
+        <button class="overlay-btn" id="fmScreenshot">Save PNG</button>
+      </div>
+
+      <div id="fmriLegend">
+        <div id="fmLegendTitle">Activation</div>
+        <div class="lg-bar" id="fmLegendBar"></div>
+        <div class="lg-ends"><span id="fmLegendLo">0</span><span id="fmLegendHi">+max</span></div>
+      </div>
+
+      <div id="fmriLoading" class="active">
+        <div class="spinner"></div>
+        <div id="fmriLoadingMsg">Loading 3D brain…</div>
+      </div>
+
+      <div id="fmriToast"></div>
+    </div>
+
+    <div id="fmriSliceStrip">
+      <canvas id="fmriSlices"></canvas>
+      <div id="fmriSliceHint">axial · sagittal · coronal — drag to move crosshair</div>
+      <div id="fmriSliceMsg">Slice view loading…</div>
+    </div>
+
+    <div id="fmriPlotWrap">
+      <div id="fmriPlotHdr">
+        <span class="legend-item"><span class="swatch" style="background:#58a6ff"></span><span id="fmFeedName">Feeder · task design</span></span>
+        <span class="legend-item" id="fmSelLegend" hidden><span class="swatch" style="background:#f6c744"></span><span id="fmSelName">region</span></span>
+        <span style="margin-left:auto;">click to seek</span>
+      </div>
+      <canvas id="fmriPlot"></canvas>
+    </div>
+
+    <div id="fmriStatus">
+      <span id="fmriHover">Press ▶ Play · hover a region to identify · drag to orbit</span>
+      <span id="fmriSel"></span>
+    </div>
+  </main>
+</div><!-- #view-fmri -->
+
 </div><!-- #tabContent -->
 </div><!-- #app -->
+
+<!-- ═══════════════ COLLECTION PANEL (floats over every tab) ═══════════════ -->
+<div id="viewPanel" aria-label="View collection">
+  <div class="vp-header" id="vpHeader">
+    <span class="vp-grip">⠿</span>
+    <span class="vp-title">Collection</span>
+    <span class="vp-count" id="vpCount">(0)</span>
+    <button class="vp-collapse" id="vpCollapse" title="Collapse / expand">▾</button>
+  </div>
+  <div class="vp-body">
+    <div class="vp-empty" id="vpEmpty">
+      No views yet.<br>Open any tab, frame a brain you like,<br>then “＋ Add current view”.
+    </div>
+    <div class="vp-list" id="vpList" style="display:flex;flex-direction:column;gap:8px;"></div>
+  </div>
+  <div class="vp-footer">
+    <button class="vp-btn primary" id="vpAdd">＋ Add current view</button>
+    <div class="vp-opts">
+      <label>Cols
+        <select id="vpCols">
+          <option value="auto" selected>Auto</option>
+          <option value="1">1</option><option value="2">2</option>
+          <option value="3">3</option><option value="4">4</option>
+        </select>
+      </label>
+      <label><input type="checkbox" id="vpLabels" checked> Labels</label>
+    </div>
+    <div class="vp-row">
+      <button class="vp-btn" id="vpSave">⬇ Save PNG</button>
+      <button class="vp-btn" id="vpClear">Clear</button>
+    </div>
+    <div class="vp-status" id="vpStatus"></div>
+  </div>
+</div>
 
 <script>
 // ═══════════════════════════════════════════════════════════════════════
@@ -1117,6 +1733,16 @@ function showFatalError(msg) {
   }
 }
 
+// ── HTML-escape helper for values interpolated into innerHTML (issues.md A4).
+//    Defined early + on window so every script block can reach it. Use this on
+//    any user-controllable string (uploaded file names, etc.) before it reaches
+//    an innerHTML template.
+window.escapeHtml = function (s) {
+  return String(s).replace(/[&<>"']/g, c => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+  ))
+}
+
 // ── Diagnostics / error log (defined early so it captures startup errors too) ──
 window.__diag = []
 window.diag = function (level, ...args) {
@@ -1132,14 +1758,26 @@ window.diag = function (level, ...args) {
   return entry
 }
 
+// Set true once init() resolves. Before that, an uncaught error means the app
+// never came up → the full-screen fatal overlay is appropriate. After that, a
+// stray rejection (e.g. an optional async path) must NOT nuke a working UI; it
+// goes to the diag ring buffer + a toast instead (issues.md E1).
+window.__appReady = false
+function reportRuntimeError(label, full) {
+  window.diag('error', label, full)
+  if (window.__appReady) {
+    const first = String(full).split('\n')[0]
+    if (typeof window.toast === 'function') window.toast(first + ' — see Diagnostics', 'err')
+  } else {
+    showFatalError(full)
+  }
+}
 window.addEventListener('error', e => {
-  window.diag('error', 'window.error:', e.message, (e.filename || '') + ':' + (e.lineno || ''))
-  showFatalError(e.message + '\n' + (e.filename || '') + ':' + (e.lineno || ''))
+  reportRuntimeError('window.error:', e.message + '\n' + (e.filename || '') + ':' + (e.lineno || ''))
 })
 window.addEventListener('unhandledrejection', e => {
   const r = e.reason
-  window.diag('error', 'unhandledrejection:', (r && r.stack) || (r && r.message) || r || 'unhandled rejection')
-  showFatalError((r && r.message) || r || 'unhandled rejection')
+  reportRuntimeError('unhandledrejection:', (r && r.stack) || (r && r.message) || r || 'unhandled rejection')
 })
 </script>
 
@@ -1148,7 +1786,10 @@ window.addEventListener('unhandledrejection', e => {
 //  IMPORT NIIVUE  (with CDN fallback)
 // ═══════════════════════════════════════════════════════════════════════
 async function importNiivue() {
+  // Local vendored copy first (no runtime CDN trust, works offline — A3/A5);
+  // public CDNs remain only as a last-resort fallback.
   const cdns = [
+    '/vendor/niivue/index.js',
     'https://unpkg.com/@niivue/niivue@0.69.0/dist/index.js',
     'https://cdn.jsdelivr.net/npm/@niivue/niivue@0.69.0/dist/index.js',
     'https://unpkg.com/@niivue/niivue@0.69.0/build/niivue/index.js',
@@ -1156,7 +1797,9 @@ async function importNiivue() {
   let lastErr
   for (const url of cdns) {
     try {
-      document.getElementById('loadingMsg').textContent = 'Loading NiiVue from CDN…'
+      const local = url.startsWith('/vendor/')
+      document.getElementById('loadingMsg').textContent =
+        local ? 'Loading NiiVue…' : 'Loading NiiVue from CDN…'
       const mod = await import(url)
       if (mod && mod.Niivue && mod.SHOW_RENDER && mod.NVImage) return mod
       lastErr = new Error('module missing Niivue / SHOW_RENDER exports')
@@ -1173,6 +1816,8 @@ const diag = (level, ...args) => (window.diag ? window.diag(level, ...args) : co
 
 const { Niivue, SHOW_RENDER, NVImage } = await importNiivue()
 diag('info', 'NiiVue module loaded')
+// Expose to the classic-script tabs (the fMRI slice strip builds its own Niivue).
+window.NiivueLib = { Niivue, NVImage, SHOW_RENDER }
 
 // ═══════════════════════════════════════════════════════════════════════
 //  LABEL PARSERS
@@ -1346,21 +1991,21 @@ function renderList() {
 
 function regionRow(r) {
   const hov = r.index === hoverIdx ? ' hovered' : ''
-  const hexColor = rgb2hex(r.color)
+  const hexColor = rgb2hex(r.color)           // controlled hex string
+  const name = escapeHtml(r.name)             // region name may come from uploaded data
   return `<div class="region-item${hov}" data-idx="${r.index}">
-    <input type="checkbox" ${r.visible ? 'checked' : ''}
-      onchange="_tv(${r.index},this.checked)">
+    <input type="checkbox" class="r-vis" ${r.visible ? 'checked' : ''}>
     <div class="swatch-wrap" style="background:${hexColor}">
-      <input type="color" value="${hexColor}"
-        oninput="_tc(${r.index},this.value)"
-        onchange="_tc(${r.index},this.value)">
+      <input type="color" class="r-col" value="${hexColor}">
     </div>
-    <span class="r-name ${r.visible ? '' : 'off'}" title="${r.name}">${r.name}</span>
+    <span class="r-name ${r.visible ? '' : 'off'}" title="${name}">${name}</span>
   </div>`
 }
 
-// Inline handler shims (needed because innerHTML event strings)
-window._tv = (idx, vis) => {
+// Region-list interactions via event delegation (replaces the old inline
+// on*= handler strings + window._tv/_tc shims, so a CSP without unsafe-inline
+// can hold — issues.md A4).
+function setRegionVisible(idx, vis) {
   const r = regions.find(r => r.index === idx)
   if (!r) return
   r.visible = vis
@@ -1371,11 +2016,11 @@ window._tv = (idx, vis) => {
     `${regions.filter(r => r.visible).length} / ${regions.length} visible`
 }
 
-// A colour drag fires oninput per pixel, and each applyColormap() re-uploads the
+// A colour drag fires 'input' per pixel, and each applyColormap() re-uploads the
 // LUT to the GPU (updateGLVolume). Update the colour state + swatch synchronously,
 // but coalesce the GPU upload to one per animation frame.
 let _tcRaf = 0
-window._tc = (idx, hex) => {
+function setRegionColor(idx, hex) {
   const r = regions.find(r => r.index === idx)
   if (!r) return
   r.color = hex2rgb(hex)
@@ -1383,6 +2028,22 @@ window._tc = (idx, hex) => {
   if (sw) sw.style.background = hex
   if (!_tcRaf) _tcRaf = requestAnimationFrame(() => { _tcRaf = 0; applyColormap() })
 }
+
+;(function wireRegionList() {
+  const listEl = document.getElementById('regionList')
+  if (!listEl) return
+  listEl.addEventListener('change', e => {
+    const item = e.target.closest('[data-idx]'); if (!item) return
+    const idx = +item.dataset.idx
+    if (e.target.classList.contains('r-vis')) setRegionVisible(idx, e.target.checked)
+    else if (e.target.classList.contains('r-col')) setRegionColor(idx, e.target.value)
+  })
+  listEl.addEventListener('input', e => {
+    if (!e.target.classList.contains('r-col')) return
+    const item = e.target.closest('[data-idx]'); if (!item) return
+    setRegionColor(+item.dataset.idx, e.target.value)
+  })
+})()
 
 // ═══════════════════════════════════════════════════════════════════════
 //  ATLAS LOADING
@@ -1676,6 +2337,17 @@ function saveScreenshot() {
   toast('Screenshot saved')
 }
 
+// Capture the Figure (NiiVue) canvas at native resolution for the Collection panel.
+// Synchronously redraws so the WebGL backbuffer is fresh before toDataURL reads it.
+window.__captureFigure = function () {
+  if (!nv) return null
+  nv.drawScene()
+  const url = document.getElementById('gl1').toDataURL('image/png')
+  if (!url || url.length < 200) return null
+  const meta = (typeof ATLAS_META !== 'undefined' && ATLAS_META[currentKey]) ? ATLAS_META[currentKey] : null
+  return { url, tab: 'figure', label: 'Figure · ' + (meta ? meta.name : currentKey) }
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 //  FIGURE MODE  (hides crosshairs & status bar for clean capture)
 // ═══════════════════════════════════════════════════════════════════════
@@ -1838,14 +2510,17 @@ function renderVolTableBody() {
     return (typeof va === 'string' ? va.localeCompare(vb) : va - vb) * dir
   })
   document.getElementById('vmTableBody').innerHTML = rows.map(r => `
-    <tr><td>${r.name}</td><td>${r.vox.toLocaleString()}</td>
+    <tr><td>${escapeHtml(r.name)}</td><td>${r.vox.toLocaleString()}</td>
     <td>${r.mm3.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
     <td>${fmtVol(r.cm3)}</td></tr>`).join('')
 }
 
 // ── Part 2: subject GM segmentation (brainchop fast model) ─────────────
 // model5_gw_ae: 256³×1 in → 3 classes out (0 bg / 1 white / 2 gray).
-const BC_MODEL_BASE = 'https://cdn.jsdelivr.net/gh/neuroneural/brainchop@master/public/models/model5_gw_ae'
+// Model + weights are vendored locally under /vendor/ (fetched at the pinned
+// commit 4c87885 by scripts/fetch_vendor.sh), so no brainchop/CDN code or data
+// is trusted at runtime (issues.md A3/A5).
+const BC_MODEL_BASE = '/vendor/brainchop/model5_gw_ae'
 const TFJS_VER = '4.22.0'
 let _tf = null, _bcModel = null, _segBusy = false
 let _segBackend = 'n/a'   // which TF.js backend inference actually ran on
@@ -1868,6 +2543,7 @@ async function loadTF() {
   diag('info', 'loadTF: loading TensorFlow.js core', TFJS_VER)
   if (!window.tf) {
     const urls = [
+      `/vendor/tfjs/tf.min.js`,   // local vendored copy first (A3/A5)
       `https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@${TFJS_VER}/dist/tf.min.js`,
       `https://unpkg.com/@tensorflow/tfjs@${TFJS_VER}/dist/tf.min.js`,
     ]
@@ -1888,10 +2564,11 @@ async function loadTF() {
   // Ensure the WASM backend is registered before we try to select it
   if (order.includes('wasm') && (!_tf.findBackend || !_tf.findBackend('wasm'))) {
     try {
-      await loadScript(`https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-wasm@${TFJS_VER}/dist/tf-backend-wasm.min.js`)
-      const base = `https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-wasm@${TFJS_VER}/dist/`
-      if (_tf.wasm && _tf.wasm.setWasmPaths) _tf.wasm.setWasmPaths(base)
-      else if (_tf.setWasmPaths) _tf.setWasmPaths(base)
+      const wasmBase = '/vendor/tfjs/'   // local vendored .wasm binaries (A3/A5)
+      try { await loadScript(wasmBase + 'tf-backend-wasm.min.js') }
+      catch (_) { await loadScript(`https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-wasm@${TFJS_VER}/dist/tf-backend-wasm.min.js`) }
+      if (_tf.wasm && _tf.wasm.setWasmPaths) _tf.wasm.setWasmPaths(wasmBase)
+      else if (_tf.setWasmPaths) _tf.setWasmPaths(wasmBase)
       diag('info', 'WASM backend script loaded')
     } catch (e) { diag('error', 'WASM backend load failed', e) }
   }
@@ -2058,7 +2735,7 @@ function showSegResults(counts, fname) {
 
   document.getElementById('vmContent').innerHTML = `
     <div class="vm-sub">
-      ${fname} · brainchop fast model (model5_gw_ae) · 1 mm³ voxels.
+      ${escapeHtml(fname)} · brainchop fast model (model5_gw_ae) · 1 mm³ voxels.
       <b>Rough estimate</b> from a quick, lower-accuracy model — not FSL-FAST quality.
       Nothing was uploaded; this ran locally on your GPU. The classified tissue is
       shaded on your T1 behind this dialog — adjust with the <b>Atlas opacity</b>
@@ -2076,7 +2753,7 @@ function showSegResults(counts, fname) {
       <thead><tr><th>Tissue</th><th>Voxels</th><th>cm³</th></tr></thead>
       <tbody>${rows.map(r =>
         `<tr><td><span style="display:inline-block;width:10px;height:10px;border-radius:2px;
-          margin-right:7px;vertical-align:middle;background:rgb(${segColorFor(r.name).join(',')})"></span>${r.name}</td>
+          margin-right:7px;vertical-align:middle;background:rgb(${segColorFor(r.name).join(',')})"></span>${escapeHtml(r.name)}</td>
         <td>${r.vox.toLocaleString()}</td><td>${fmtVol(cm3(r.vox))}</td></tr>`).join('')}
       </tbody>
       <tfoot><tr class="total-row">
@@ -2137,6 +2814,107 @@ function showDiagnostics() {
     report.replace(/</g, '&lt;') + '</pre></div>'
   setVmCsv(() => ({ filename: `atlas_diagnostics_${Date.now()}.txt`, text: buildDiagnosticsReport() }), 'Save log')
   openVolModal('Diagnostics')
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  CLI EXPORT  — §4 of atlas_cli_spec: builds preset JSON + command string
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * Build a preset object (spec §2) from the current Figure-tab state.
+ * Reads: regions[], currentKey, slX/slY/slZ sliders, nv volumes.
+ * @returns {Object} preset
+ */
+function buildFigurePreset() {
+  const isAal = currentKey === 'aal' || currentKey === 'aal3'
+
+  // Slice positions from MNI-mm sliders → voxel indices via the loaded atlas volume.
+  // Only non-centre (non-zero mm) axes are exported; centre → null (CLI auto-selects).
+  const mmX = parseInt(document.getElementById('slX').value, 10)
+  const mmY = parseInt(document.getElementById('slY').value, 10)
+  const mmZ = parseInt(document.getElementById('slZ').value, 10)
+
+  let sliceX = null, sliceY = null, sliceZ = null
+  if (nv && nv.volumes.length >= 2) {
+    const vol = nv.volumes[1]
+    if (typeof vol.mm2vox === 'function') {
+      const vox = vol.mm2vox([mmX, mmY, mmZ])
+      if (mmX !== 0) sliceX = Math.round(vox[0])
+      if (mmY !== 0) sliceY = Math.round(vox[1])
+      if (mmZ !== 0) sliceZ = Math.round(vox[2])
+    }
+  }
+
+  /** @type {Object} */
+  const preset = {
+    version:    1,
+    atlas:      currentKey,
+    regions:    regions
+      .filter(r => r.visible)
+      .map(r => ({ name: r.name, color: rgb2hex(r.color) })),
+    select:     { lobe: [], network: [], hemi: [] },
+    views:      ['oblique'],
+    figure:     true,
+    slices:     { x: sliceX, y: sliceY, z: sliceZ },
+    background: 'white',
+    context:    true,
+    dpi:        300,
+    title:      null,
+  }
+
+  if (!isAal) preset.meshWarning = true
+
+  return preset
+}
+
+/**
+ * Convert a preset (§2) to the equivalent `python atlas_cli.py render …` string.
+ * Format rules match the CLI's `preset_to_argv` (spec §4).
+ * @param {Object} preset
+ * @returns {string}
+ */
+function buildCliCommand(preset) {
+  const parts = ['python atlas_cli.py render']
+  parts.push(`--atlas ${preset.atlas}`)
+
+  if (preset.regions.length > 0) {
+    parts.push(`--regions ${preset.regions.map(r => r.name).join(',')}`)
+    for (const r of preset.regions) {
+      if (r.color) parts.push(`--color ${r.name}=${r.color}`)
+    }
+  }
+
+  // --figure flag (no value) for the 4-panel layout
+  parts.push('--figure')
+
+  // Slice flags only when position is non-null (i.e. slider was moved off centre)
+  if (preset.slices.x !== null) parts.push(`--slice-x ${preset.slices.x}`)
+  if (preset.slices.y !== null) parts.push(`--slice-y ${preset.slices.y}`)
+  if (preset.slices.z !== null) parts.push(`--slice-z ${preset.slices.z}`)
+
+  parts.push(`--dpi ${preset.dpi ?? 300}`)
+  parts.push('-o figure.png')
+
+  return parts.join(' ')
+}
+
+function openCliModal() {
+  const preset  = buildFigurePreset()
+  const cmd     = buildCliCommand(preset)
+  const jsonStr = JSON.stringify(preset, null, 2)
+
+  document.getElementById('cliCmdText').value  = cmd
+  document.getElementById('cliJsonText').value = jsonStr
+
+  const showWarn = !!preset.meshWarning
+  document.getElementById('cliWarnBanner').style.display  = showWarn ? '' : 'none'
+  document.getElementById('cliAtlasNote').style.display   = showWarn ? '' : 'none'
+
+  document.getElementById('cliModal').classList.add('active')
+}
+
+function closeCliModal() {
+  document.getElementById('cliModal').classList.remove('active')
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -2268,6 +3046,33 @@ async function init() {
   document.getElementById('btnDiag').onclick = () => showDiagnostics()
   document.getElementById('volModal').onclick = e => { if (e.target.id === 'volModal') closeVolModal() }
 
+  // ── CLI Export ───────────────────────────────────────────
+  document.getElementById('btnExportCli').addEventListener('click', openCliModal)
+  document.getElementById('btnCliClose').addEventListener('click', closeCliModal)
+  document.getElementById('cliModal').addEventListener('click', e => {
+    if (e.target.id === 'cliModal') closeCliModal()
+  })
+  document.getElementById('btnCliCopyCmd').addEventListener('click', () => {
+    navigator.clipboard.writeText(document.getElementById('cliCmdText').value)
+      .then(() => toast('Command copied'))
+      .catch(() => toast('Copy failed — select and copy manually', 'err'))
+  })
+  document.getElementById('btnCliCopyJson').addEventListener('click', () => {
+    navigator.clipboard.writeText(document.getElementById('cliJsonText').value)
+      .then(() => toast('JSON copied'))
+      .catch(() => toast('Copy failed — select and copy manually', 'err'))
+  })
+  document.getElementById('btnCliDownload').addEventListener('click', () => {
+    const json = document.getElementById('cliJsonText').value
+    const blob = new Blob([json], { type: 'application/json' })
+    const a    = document.createElement('a')
+    a.href     = URL.createObjectURL(blob)
+    a.download = `atlas_preset_${currentKey}_${Date.now()}.json`
+    a.click()
+    URL.revokeObjectURL(a.href)
+    toast('Preset downloaded')
+  })
+
   // ── Canvas events ────────────────────────────────────────
   const canvas = document.getElementById('gl1')
   canvas.addEventListener('mousemove', onMouseMove)
@@ -2282,7 +3087,7 @@ async function init() {
   await loadAtlas('aal')
 }
 
-init().catch(err => {
+init().then(() => { window.__appReady = true }).catch(err => {
   console.error(err)
   document.getElementById('loadingMsg').textContent = `Failed: ${err.message}`
   document.getElementById('loadingOverlay').classList.add('active')
@@ -2299,17 +3104,90 @@ init().catch(err => {
 <script>
 // ───── Tab switching (independent of Three.js load) ─────
 const tabButtons = [...document.querySelectorAll('.tab-btn')]
-let exploreInited = false
+let exploreInited = false, fmriInited = false
+// GPU-context lifecycle (issues.md B2): each tab's WebGL context is created
+// lazily exactly once (guarded by the *Inited flags below) and then reused —
+// switching tabs only pauses/resumes the dirty-flag-gated RAF loops, it never
+// allocates a new context, so repeated tab switching does not grow the live
+// context count. We deliberately do NOT dispose()/forceContextLoss() a tab's
+// renderer on hide: recreating NiiVue/three contexts mid-session risks
+// CONTEXT_LOST and state-restore bugs that outweigh reclaiming one idle
+// context. Steady GPU growth instead came from geometry/material rebuilds,
+// which are now freed via disposeObject3D (B3).
 function switchTab(name) {
   document.getElementById('view-figure').hidden  = name !== 'figure'
   document.getElementById('view-explore').hidden = name !== 'explore'
+  document.getElementById('view-fmri').hidden    = name !== 'fmri'
   tabButtons.forEach(b => b.classList.toggle('active', b.dataset.tab === name))
   if (name === 'explore') {
     if (!exploreInited) { exploreInited = true; initExplore() }  // initExplore kicks startAnim()
     else startAnim()                                             // returning: resume the paused loop
+  } else if (name === 'fmri') {
+    if (!fmriInited) { fmriInited = true; fmriInit() }           // fmriInit kicks fmriStartAnim()
+    else fmriStartAnim()
   }
 }
 tabButtons.forEach(b => (b.onclick = () => switchTab(b.dataset.tab)))
+
+// ───── Collapsible settings sections ─────
+// Every settings panel with a bold header becomes a foldable dropdown so the
+// long sidebars don't force endless scrolling. We wrap each header's following
+// siblings in a .collapse-body and toggle a .collapsed class on click. The
+// open/closed state is remembered per section in localStorage.
+function initCollapsibleSections() {
+  const SECTIONS = '.ex-section, .fm-section, #atlasSection, #slicePanel, #controlsPanel, #volumePanel, #regionPanel, #exportCliPanel'
+  document.querySelectorAll(SECTIONS).forEach(sec => {
+    if (sec.dataset.collapsibleInit) return
+    // Only sections whose first real control is a bold label header become
+    // dropdowns (skips e.g. the white-matter-tracts section, which is already
+    // driven by its own checkbox).
+    const header = sec.querySelector(':scope > .label-xs')
+    if (!header) return
+    sec.dataset.collapsibleInit = '1'
+    sec.classList.add('collapsible')
+
+    const body = document.createElement('div')
+    body.className = 'collapse-body'
+    let n = header.nextElementSibling
+    while (n) { const next = n.nextElementSibling; body.appendChild(n); n = next }
+    sec.appendChild(body)
+
+    header.classList.add('collapse-toggle')
+    header.setAttribute('role', 'button')
+    header.setAttribute('tabindex', '0')
+
+    const key = 'av-collapse:' + (sec.id || header.textContent.trim().slice(0, 32))
+    try { if (localStorage.getItem(key) === '1') sec.classList.add('collapsed') } catch (e) {}
+
+    const toggle = e => {
+      // Don't fold when the click/keypress lands on a control inside the header
+      // (e.g. the "Center" button in the MNI-position header).
+      if (e.target.closest('button, input, select, a')) return
+      if (e.type === 'keydown') {
+        if (e.key !== 'Enter' && e.key !== ' ') return
+        e.preventDefault()
+      }
+      sec.classList.toggle('collapsed')
+      try { localStorage.setItem(key, sec.classList.contains('collapsed') ? '1' : '0') } catch (e) {}
+    }
+    header.addEventListener('click', toggle)
+    header.addEventListener('keydown', toggle)
+  })
+}
+initCollapsibleSections()
+
+// Shared, cached brain-bundle loader — both the Explore and fMRI tabs build
+// their (independent) Three.js scenes from this single fetch.
+let _bundlePromise = null
+function getBundle() {
+  if (!_bundlePromise) {
+    _bundlePromise = fetch('/meshes/brain_bundle.json').then(r => {
+      if (!r.ok) throw new Error('meshes/brain_bundle.json not found.\nRun:  python build_brain_bundle.py')
+      return r.json()
+    })
+  }
+  return _bundlePromise
+}
 
 // ───── Palettes ─────
 const LOBE_COLORS = {
@@ -2427,7 +3305,8 @@ function infoFor(meta) {
 const HEMI_NAME = { L: 'Left hemisphere', R: 'Right hemisphere', M: 'Midline' }
 
 // ───── State ─────
-let THREE, renderer, scene, camera, brain, raycaster, pointer, tmp
+let THREE, renderer, scene, camera, brain, arcGroup, raycaster, pointer, tmp
+let brainRadius = 2              // outer cortical radius (bounding sphere); set in buildScene
 let gizmoRenderer, gizmoScene, gizmoCamera, gizmoCube   // orientation cube
 let learnMode = false                                   // Learn-mode toggle
 let regions = []                 // { meta, mesh, baseColor }
@@ -2438,6 +3317,13 @@ let groupHidden = new Set()
 let spin = false
 let needsRender = true
 let exSearch = ''
+// Connection arcs: [{ id, fromIdx, toIdx, color, height, thickness, headSize,
+// mode('one'|'two'|'none'), opacity, visible, _obj, _mat }]. Endpoints follow the
+// regions' world centroids, so arcs re-bend on explode.
+let arcs = []
+let arcSeq = 0
+let selectedArc = null
+let connectMode = false, connectSrc = null
 // Per-region explode (0..1) and opacity (0..1, <1 = glass) live on each mesh's
 // userData — a single source of truth. The global slider and the group sliders
 // are bulk writers over those, and per-region settings survive switching the
@@ -2448,9 +3334,28 @@ let INIT_ORB = null
 let tweening = false, tweenStart = 0
 const TWEEN_DUR = 950
 
+// ───── White-matter tracts (schematic connectome wires) ─────
+// Edges are inferred once from region centroids + network/lobe/hemisphere
+// metadata (no DTI data ships with the app). Each tract is a tube that bows
+// toward the brain interior so it reads as a fibre running *under* the cortex.
+let tractGroup = null              // THREE.Group of tube meshes (child of `brain`)
+let tractEdges = []                // { i, j, type, network, weight, a, b }
+const tractOpts = {
+  show: false, filter: 'all', network: 'all',
+  types: { commissural: true, association: true, local: true, projection: true },
+  density: 0.45, thickness: 0.35, opacity: 0.85, colorBy: 'type',
+}
+const TRACT_TYPE_COLORS = {
+  commissural: '#e15759',   // interhemispheric (corpus-callosum-like)
+  association: '#4e79a7',   // long intra-hemispheric, within a network
+  local:       '#59a14f',   // short U-fibres between neighbouring gyri
+  projection:  '#f28e2b',   // subcortical hub ↔ cortex (thalamo-cortical etc.)
+}
+
 // ───── Init ─────
 async function importThree() {
   const cdns = [
+    '/vendor/three/three.module.js',   // local vendored copy first (A3/A5)
     'https://unpkg.com/three@0.160.0/build/three.module.js',
     'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js',
   ]
@@ -2467,9 +3372,7 @@ async function initExplore() {
     msg.textContent = 'Loading 3D engine…'
     THREE = await importThree()
     msg.textContent = 'Fetching brain meshes…'
-    const resp = await fetch('/meshes/brain_bundle.json')
-    if (!resp.ok) throw new Error('meshes/brain_bundle.json not found.\nRun:  python build_brain_bundle.py')
-    const bundle = await resp.json()
+    const bundle = await getBundle()
     buildScene(bundle)
     document.getElementById('exploreLoading').classList.remove('active')
     startAnim()
@@ -2485,6 +3388,177 @@ function b64decode(b64, Type) {
   const bin = atob(b64), len = bin.length, buf = new Uint8Array(len)
   for (let i = 0; i < len; i++) buf[i] = bin.charCodeAt(i)
   return new Type(buf.buffer)
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  MESH QUALITY  (level-of-detail to lighten load on weak machines)
+// ═══════════════════════════════════════════════════════════════════════
+// Vertex-clustering decimation: vertices that land in the same cubic grid cell
+// (cell size = a fraction of each region's bounding-box diagonal) collapse to a
+// single averaged vertex, and triangles that degenerate are dropped. Because the
+// cell size scales per-region, every region keeps its shape and none vanishes.
+// 'high' leaves the original geometry untouched; coarser levels trade silhouette
+// detail for far fewer triangles -> less GPU/CPU cost. Shared by Explore + fMRI.
+const MESH_QFRAC = { high: 0, medium: 0.012, low: 0.025, vlow: 0.05 }
+let meshQuality = 'high'
+
+function decimateGeometry(srcGeo, frac) {
+  if (!frac || frac <= 0) return srcGeo
+  const pos = srcGeo.getAttribute('position')
+  const index = srcGeo.getIndex()
+  srcGeo.computeBoundingBox()
+  const bb = srcGeo.boundingBox
+  const cell = bb.min.distanceTo(bb.max) * frac
+  if (cell <= 0) return srcGeo
+  const inv = 1 / cell, vCount = pos.count
+  const cells = new Map()             // cellKey -> { sx, sy, sz, n, ni }
+  const vCell = new Array(vCount)     // vertex -> its cell record
+  for (let i = 0; i < vCount; i++) {
+    const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i)
+    const key = (((x - bb.min.x) * inv) | 0) + ',' +
+                (((y - bb.min.y) * inv) | 0) + ',' +
+                (((z - bb.min.z) * inv) | 0)
+    let c = cells.get(key)
+    if (!c) { c = { sx: 0, sy: 0, sz: 0, n: 0, ni: -1 }; cells.set(key, c) }
+    c.sx += x; c.sy += y; c.sz += z; c.n++
+    vCell[i] = c
+  }
+  // One averaged vertex per occupied cell
+  const newPos = new Float32Array(cells.size * 3)
+  let ni = 0
+  for (const c of cells.values()) {
+    c.ni = ni
+    newPos[ni * 3] = c.sx / c.n; newPos[ni * 3 + 1] = c.sy / c.n; newPos[ni * 3 + 2] = c.sz / c.n
+    ni++
+  }
+  // Remap triangles, dropping any that collapsed to fewer than 3 distinct cells
+  const newIdx = []
+  const triLen = index ? index.count : vCount
+  for (let i = 0; i + 2 < triLen; i += 3) {
+    const a = vCell[index ? index.getX(i)     : i].ni
+    const b = vCell[index ? index.getX(i + 1) : i + 1].ni
+    const c = vCell[index ? index.getX(i + 2) : i + 2].ni
+    if (a !== b && b !== c && a !== c) newIdx.push(a, b, c)
+  }
+  if (newIdx.length < 3) return srcGeo   // too aggressive - keep the original
+  const g = new THREE.BufferGeometry()
+  g.setAttribute('position', new THREE.BufferAttribute(newPos, 3))
+  g.setIndex(new THREE.BufferAttribute(new Uint32Array(newIdx), 1))
+  g.computeVertexNormals()
+  return g
+}
+
+// Swap each region mesh's geometry to the level-of-detail for `frac`.
+// `fullGeo` (the pristine bundle geometry) is kept so we can raise quality again.
+function applyMeshLOD(regionList, frac) {
+  for (const rec of regionList) {
+    const mesh = rec.mesh
+    const full = mesh.userData && mesh.userData.fullGeo
+    if (!full) continue
+    const next = decimateGeometry(full, frac)
+    if (mesh.geometry !== full && mesh.geometry !== next) mesh.geometry.dispose()
+    mesh.geometry = next
+  }
+}
+
+function setMeshQuality(level) {
+  if (!Object.prototype.hasOwnProperty.call(MESH_QFRAC, level)) level = 'high'
+  meshQuality = level
+  const frac = MESH_QFRAC[level]
+  if (Array.isArray(regions) && regions.length && regions[0].mesh) applyMeshLOD(regions, frac)
+  if (typeof F !== 'undefined' && F && F.regions && F.regions.length) applyMeshLOD(F.regions, frac)
+  const e1 = document.getElementById('exMeshQuality'); if (e1) e1.value = level
+  const e2 = document.getElementById('fmMeshQuality'); if (e2) e2.value = level
+  needsRender = true
+  if (typeof F !== 'undefined' && F) F.need = true
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Shared Three.js engine helpers (used by BOTH the Explore and fMRI tabs)
+//  The two tabs hold their scene/camera/orb state differently (Explore uses
+//  module-scope globals, fMRI uses the `F` object), so these helpers take a
+//  small "context" of accessors + callbacks instead of touching state directly.
+// ═══════════════════════════════════════════════════════════════════════
+
+// Z-up custom orbit controls (no external dependency). `ctx` provides:
+//   getCamera()  → the THREE.PerspectiveCamera (read lazily; may be reassigned)
+//   orb          → { target, radius, theta, phi } state object (mutated in place)
+//   getTmp()     → a scratch THREE.Vector3 (for pan view-dir math; read lazily)
+//   onChange()   → called after any camera move (sets the tab's dirty flag)
+//   onHover(e)   → pointermove hover handler
+//   onClick(e)   → fired on a click (pointerup without significant drag)
+//   setInitOrb(o)→ stores the initial { radius, theta, phi } for reset
+// Returns { syncCam, attach } — syncCam re-derives camera position from orb;
+// attach(canvas) wires pointer/wheel listeners and seeds orb from the camera.
+function makeOrbitController(ctx) {
+  function syncCam() {
+    const cam = ctx.getCamera()
+    const { target, radius, theta, phi } = ctx.orb
+    cam.position.set(
+      target.x + radius * Math.sin(phi) * Math.cos(theta),
+      target.y + radius * Math.sin(phi) * Math.sin(theta),
+      target.z + radius * Math.cos(phi))
+    cam.lookAt(target)
+    ctx.onChange()
+  }
+  function attach(canvas) {
+    const cam = ctx.getCamera()
+    const orb = ctx.orb
+    const off = cam.position.clone().sub(orb.target)
+    orb.radius = off.length()
+    orb.theta = Math.atan2(off.y, off.x)
+    orb.phi = Math.acos(Math.min(1, Math.max(-1, off.z / orb.radius)))
+    ctx.setInitOrb({ radius: orb.radius, theta: orb.theta, phi: orb.phi })
+    syncCam()
+
+    let dragging = false, mode = 'rot', px = 0, py = 0, sx = 0, sy = 0
+    canvas.addEventListener('pointerdown', e => {
+      dragging = true; mode = (e.button === 2 || e.shiftKey) ? 'pan' : 'rot'
+      px = sx = e.clientX; py = sy = e.clientY; canvas.setPointerCapture(e.pointerId)
+    })
+    canvas.addEventListener('pointermove', e => {
+      ctx.onHover(e)
+      if (!dragging) return
+      const dx = e.clientX - px, dy = e.clientY - py; px = e.clientX; py = e.clientY
+      if (mode === 'rot') {
+        orb.theta -= dx * 0.006
+        orb.phi = Math.min(Math.PI - 0.05, Math.max(0.05, orb.phi - dy * 0.006))
+      } else {
+        const cam2 = ctx.getCamera()
+        const scale = orb.radius * 0.0016
+        const viewDir = ctx.getTmp().subVectors(orb.target, cam2.position).normalize()
+        const right = new THREE.Vector3().crossVectors(viewDir, cam2.up).normalize()
+        const up = new THREE.Vector3().crossVectors(right, viewDir).normalize()
+        orb.target.addScaledVector(right, -dx * scale).addScaledVector(up, dy * scale)
+      }
+      syncCam()
+    })
+    const end = e => {
+      if (dragging && Math.hypot(e.clientX - sx, e.clientY - sy) < 4) ctx.onClick(e)
+      dragging = false
+    }
+    canvas.addEventListener('pointerup', end)
+    canvas.addEventListener('pointercancel', () => (dragging = false))
+    canvas.addEventListener('contextmenu', e => e.preventDefault())
+    canvas.addEventListener('wheel', e => {
+      e.preventDefault()
+      orb.radius = Math.min(60, Math.max(2, orb.radius * (1 + Math.sign(e.deltaY) * 0.08)))
+      syncCam()
+    }, { passive: false })
+  }
+  return { syncCam, attach }
+}
+
+// Raycaster pick shared by both tabs. `meshes` is the candidate list (Explore
+// passes only visible regions; fMRI passes all brain children). Mutates the
+// supplied `pointer` vector and `raycaster`, exactly as the originals did.
+function raycastPick(renderer, raycaster, pointer, camera, meshes, e) {
+  const rect = renderer.domElement.getBoundingClientRect()
+  pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1
+  pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1
+  raycaster.setFromCamera(pointer, camera)
+  const hits = raycaster.intersectObjects(meshes, false)
+  return hits.length ? hits[0].object : null
 }
 
 function buildScene(bundle) {
@@ -2504,6 +3578,7 @@ function buildScene(bundle) {
   const d2 = new THREE.DirectionalLight(0x8899bb, 0.4);  d2.position.set(-6, 5, -3); scene.add(d2)
 
   brain = new THREE.Group(); scene.add(brain)
+  arcGroup = new THREE.Group(); scene.add(arcGroup)   // connection arcs (independent of brain meshes)
   raycaster = new THREE.Raycaster(); pointer = new THREE.Vector2(); tmp = new THREE.Vector3()
   orb.target = new THREE.Vector3(0, 0, 0)
 
@@ -2521,7 +3596,7 @@ function buildScene(bundle) {
     const mesh = new THREE.Mesh(geo, mat)
     const base = new THREE.Vector3(r.centroid[0], r.centroid[1], r.centroid[2])
     mesh.userData = {
-      meta: r, base,
+      meta: r, base, fullGeo: geo,
       dir: base.lengthSq() > 1e-8 ? base.clone().normalize() : new THREE.Vector3(0, 0, 1),
       userVisible: true,
       explode: 0,      // per-region explode amount (0..1)
@@ -2532,6 +3607,12 @@ function buildScene(bundle) {
     regions.push(rec); byIndex.set(r.index, rec)
   }
 
+  // Outer radius of the whole brain — arcs use it to clear the cortical surface.
+  brainRadius = new THREE.Box3().setFromObject(brain)
+    .getBoundingSphere(new THREE.Sphere()).radius || 2
+
+  applyMeshLOD(regions, MESH_QFRAC[meshQuality])
+  buildConnectome()
   initOrbit(canvas)
   buildGizmo()
   setupUI()
@@ -2552,57 +3633,18 @@ function resize() {
 }
 
 // ───── Orbit controls (Z-up, custom — no extra dependency) ─────
-function syncCam() {
-  const { target, radius, theta, phi } = orb
-  camera.position.set(
-    target.x + radius * Math.sin(phi) * Math.cos(theta),
-    target.y + radius * Math.sin(phi) * Math.sin(theta),
-    target.z + radius * Math.cos(phi))
-  camera.lookAt(target)
-  needsRender = true
-}
-function initOrbit(canvas) {
-  const off = camera.position.clone().sub(orb.target)
-  orb.radius = off.length()
-  orb.theta = Math.atan2(off.y, off.x)
-  orb.phi = Math.acos(Math.min(1, Math.max(-1, off.z / orb.radius)))
-  INIT_ORB = { radius: orb.radius, theta: orb.theta, phi: orb.phi }
-  syncCam()
-
-  let dragging = false, mode = 'rot', px = 0, py = 0, sx = 0, sy = 0
-  canvas.addEventListener('pointerdown', e => {
-    dragging = true; mode = (e.button === 2 || e.shiftKey) ? 'pan' : 'rot'
-    px = sx = e.clientX; py = sy = e.clientY; canvas.setPointerCapture(e.pointerId)
-  })
-  canvas.addEventListener('pointermove', e => {
-    onHover(e)
-    if (!dragging) return
-    const dx = e.clientX - px, dy = e.clientY - py; px = e.clientX; py = e.clientY
-    if (mode === 'rot') {
-      orb.theta -= dx * 0.006
-      orb.phi = Math.min(Math.PI - 0.05, Math.max(0.05, orb.phi - dy * 0.006))
-    } else {
-      const scale = orb.radius * 0.0016
-      const viewDir = tmp.subVectors(orb.target, camera.position).normalize()
-      const right = new THREE.Vector3().crossVectors(viewDir, camera.up).normalize()
-      const up = new THREE.Vector3().crossVectors(right, viewDir).normalize()
-      orb.target.addScaledVector(right, -dx * scale).addScaledVector(up, dy * scale)
-    }
-    syncCam()
-  })
-  const end = e => {
-    if (dragging && Math.hypot(e.clientX - sx, e.clientY - sy) < 4) handleClick(e)
-    dragging = false
-  }
-  canvas.addEventListener('pointerup', end)
-  canvas.addEventListener('pointercancel', () => (dragging = false))
-  canvas.addEventListener('contextmenu', e => e.preventDefault())
-  canvas.addEventListener('wheel', e => {
-    e.preventDefault()
-    orb.radius = Math.min(60, Math.max(2, orb.radius * (1 + Math.sign(e.deltaY) * 0.08)))
-    syncCam()
-  }, { passive: false })
-}
+// Shared controller wired to the Explore tab's globals (see makeOrbitController).
+const exOrbit = makeOrbitController({
+  getCamera: () => camera,
+  orb,
+  getTmp: () => tmp,   // lazy: real `tmp` is created in buildScene
+  onChange: () => { needsRender = true },
+  onHover: e => onHover(e),
+  onClick: e => handleClick(e),
+  setInitOrb: o => { INIT_ORB = o },
+})
+function syncCam() { exOrbit.syncCam() }
+function initOrbit(canvas) { exOrbit.attach(canvas) }
 function resetView() {
   Object.assign(orb, INIT_ORB); orb.target.set(0, 0, 0); syncCam()
 }
@@ -2654,13 +3696,8 @@ function syncGizmo() {
 
 // ───── Picking / highlight ─────
 function pick(e) {
-  const rect = renderer.domElement.getBoundingClientRect()
-  pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1
-  pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1
-  raycaster.setFromCamera(pointer, camera)
   const vis = regions.filter(r => r.mesh.visible).map(r => r.mesh)
-  const hits = raycaster.intersectObjects(vis, false)
-  return hits.length ? hits[0].object : null
+  return raycastPick(renderer, raycaster, pointer, camera, vis, e)
 }
 function onHover(e) {
   const m = pick(e)
@@ -2671,10 +3708,14 @@ function onHover(e) {
     ? `${meta.displayName}  ·  ${meta.lobe} / ${meta.network} / ${meta.hemisphere}`
     : 'Hover a region to identify · drag to orbit · scroll to zoom'
 }
-function handleClick(e) { selectMesh(pick(e)) }
+function handleClick(e) {
+  if (connectMode) { handleConnectClick(e); return }
+  selectMesh(pick(e))
+}
 function selectMesh(m) {
   selected = m; applyHighlight(); updateListSelection(); updateLearnPanel()
   document.getElementById('exploreSel').textContent = m ? `Selected: ${m.userData.meta.displayName}` : ''
+  if (tractOpts.show && tractOpts.filter === 'selected') updateTracts()
 }
 // Single material-state updater: combines per-region opacity (glass), selection
 // focus dimming, and hover/selected emissive. Called after any colour, opacity,
@@ -2711,6 +3752,7 @@ function applyColors() {
 function applyVisibility() {
   for (const r of regions)
     r.mesh.visible = r.mesh.userData.userVisible && !groupHidden.has(groupKeyOf(r))
+  if (tractOpts.show) updateTracts()   // drop wires whose endpoints are now hidden
   needsRender = true
 }
 function groupList() {
@@ -2784,7 +3826,7 @@ function renderRegionList() {
       <div class="ri-top">
         <input type="checkbox" ${u.userVisible ? 'checked' : ''} data-vis="${r.meta.index}">
         <span class="g-swatch" style="background:${col}"></span>
-        <span class="r-name ${u.userVisible ? '' : 'off'}" title="${r.meta.displayName}">${r.meta.displayName}</span>
+        <span class="r-name ${u.userVisible ? '' : 'off'}" title="${escapeHtml(r.meta.displayName)}">${escapeHtml(r.meta.displayName)}</span>
       </div>
       <div class="ri-ctrls">
         <span class="ri-lbl" title="Explode">⤢</span>
@@ -2835,7 +3877,7 @@ function updateLearnPanel() {
     <div class="learn-section-lbl">What it is &amp; what it does</div>
     <p>${infoFor(meta)}</p>
     <div class="learn-section-lbl">Atlas reference</div>
-    <p>${meta.name} · region #${meta.index} · AAL3 atlas.</p>
+    <p>${escapeHtml(meta.name)} · region #${meta.index} · AAL3 atlas.</p>
     <div class="netmap-note" style="margin-top:14px;">Functional-network label is approximate (AAL3 to Yeo-style).</div>`
 }
 
@@ -2845,6 +3887,8 @@ function applyExplode() {
     const u = r.mesh.userData
     r.mesh.position.copy(u.base).multiplyScalar(K).addScaledVector(u.dir, PUSH).multiplyScalar(u.explode)
   }
+  if (tractOpts.show) buildTractGeometry()   // rebuild wires from moved centroids so they follow
+  updateArcs()                               // connection arcs follow the regions' moved centroids
   needsRender = true
 }
 
@@ -2894,6 +3938,406 @@ function tweenExplode(target) {
   tweenStart = performance.now(); tweening = true
 }
 
+// ───── White-matter tracts ─────
+function stripHemi(name) { return /_(L|R)$/.test(name) ? name.slice(0, -2) : name }
+function isSubcortical(meta) {
+  return meta.lobe === 'Subcortical' || meta.lobe === 'Cerebellum' ||
+         meta.network === 'Subcortical' || meta.network === 'Brainstem'
+}
+
+// Build the (one-time) edge list from region geometry + metadata. Four classes:
+//   commissural — homotopic L↔R pair of the same region
+//   association — k-nearest same-network, same-hemisphere cortical regions
+//   local       — k-nearest same-lobe, short-range U-fibres
+//   projection  — subcortical hubs to their nearest cortical regions
+function buildConnectome() {
+  tractEdges = []
+  const seen = new Set()
+  const keyOf = (a, b) => (a < b ? a + '_' + b : b + '_' + a)
+  const vec = r => new THREE.Vector3(r.meta.centroid[0], r.meta.centroid[1], r.meta.centroid[2])
+  const pos = new Map(regions.map(r => [r, vec(r)]))
+  const dist = (a, b) => pos.get(a).distanceTo(pos.get(b))
+  const sharedNet = (a, b) =>
+    (a.meta.network === b.meta.network && a.meta.network !== 'Other') ? a.meta.network : 'mixed'
+  const SCALE = 1.0
+  const add = (a, b, type, weight) => {
+    const k = keyOf(a.meta.index, b.meta.index)
+    if (seen.has(k)) return
+    seen.add(k)
+    tractEdges.push({
+      i: a.meta.index, j: b.meta.index, type, network: sharedNet(a, b),
+      weight, a: pos.get(a).clone(), b: pos.get(b).clone(),
+    })
+  }
+
+  // 1) Commissural — homotopic L↔R of the same base region.
+  const rightByBase = new Map()
+  for (const r of regions) if (r.meta.hemisphere === 'R') rightByBase.set(stripHemi(r.meta.name), r)
+  for (const r of regions) if (r.meta.hemisphere === 'L') {
+    const partner = rightByBase.get(stripHemi(r.meta.name))
+    if (partner) add(r, partner, 'commissural', 0.95)
+  }
+
+  // 2/3) Association + local U-fibres — k-nearest within the same hemisphere.
+  const cortical = regions.filter(r => !isSubcortical(r.meta))
+  for (const r of cortical) {
+    const near = cortical
+      .filter(o => o !== r && o.meta.hemisphere === r.meta.hemisphere)
+      .sort((x, y) => dist(r, x) - dist(r, y))
+    let assoc = 0, local = 0
+    for (const o of near) {
+      const d = dist(r, o)
+      if (d > 2.2) break
+      const w = Math.exp(-d / SCALE)
+      if (o.meta.network === r.meta.network && r.meta.network !== 'Other' && assoc < 3) {
+        add(r, o, 'association', w); assoc++
+      } else if (o.meta.lobe === r.meta.lobe && d < 1.0 && local < 3) {
+        add(r, o, 'local', w); local++
+      }
+    }
+  }
+
+  // 4) Projection — subcortical hubs (not cerebellum) to nearest cortex, same hemi.
+  const hubs = regions.filter(r => isSubcortical(r.meta) && r.meta.lobe !== 'Cerebellum')
+  for (const h of hubs) {
+    const near = cortical
+      .filter(o => o.meta.hemisphere === h.meta.hemisphere || h.meta.hemisphere === 'M')
+      .sort((x, y) => dist(h, x) - dist(h, y))
+    let n = 0
+    for (const o of near) {
+      const d = dist(h, o)
+      if (d > 1.8 || n >= 3) break
+      add(h, o, 'projection', Math.exp(-d / SCALE) * 0.85); n++
+    }
+  }
+}
+
+function tractColor(e) {
+  if (tractOpts.colorBy === 'single') return '#9fb3c8'
+  if (tractOpts.colorBy === 'network') return NETWORK_COLORS[e.network] || '#8c8c8c'
+  return TRACT_TYPE_COLORS[e.type] || '#8c8c8c'
+}
+
+// Filter predicate: type toggles, density (min weight), endpoint visibility,
+// and the Show mode (all / selected region / within a network).
+function tractPasses(e) {
+  if (!tractOpts.types[e.type]) return false
+  if (e.weight < (1 - tractOpts.density) * 0.9) return false   // higher density ⇒ more wires
+  const ra = byIndex.get(e.i), rb = byIndex.get(e.j)
+  if (!ra || !rb || !ra.mesh.visible || !rb.mesh.visible) return false
+  if (tractOpts.filter === 'selected') {
+    if (!selected) return false
+    const si = selected.userData.meta.index
+    if (e.i !== si && e.j !== si) return false
+  } else if (tractOpts.filter === 'network') {
+    if (tractOpts.network !== 'all' && e.network !== tractOpts.network) return false
+  }
+  return true
+}
+
+// Recursively free GPU resources (geometry, material(s), and any textures held
+// by those materials) for an Object3D before it's discarded, so repeated
+// rebuilds — tracts, connection arcs, gizmo faces — don't leak GPU memory over
+// a long session (issues.md B3).
+function disposeObject3D(root) {
+  if (!root) return
+  root.traverse(o => {
+    if (o.geometry) o.geometry.dispose()
+    const mats = Array.isArray(o.material) ? o.material : (o.material ? [o.material] : [])
+    for (const m of mats) {
+      for (const k in m) { const v = m[k]; if (v && v.isTexture) v.dispose() }
+      m.dispose()
+    }
+  })
+}
+
+function disposeTracts() {
+  if (!tractGroup) return
+  disposeObject3D(tractGroup)
+  brain.remove(tractGroup)
+  tractGroup = null
+}
+
+function buildTractGeometry() {
+  disposeTracts()
+  tractGroup = new THREE.Group()
+  brain.add(tractGroup)
+  const radius = 0.004 + tractOpts.thickness * 0.03
+  let count = 0
+  for (const e of tractEdges) {
+    if (!tractPasses(e)) continue
+    // Live endpoints (region centroid + current explode offset) so wires stretch
+    // and follow the regions as the brain explodes; fall back to the assembled
+    // centroids if a region is missing.
+    const a = arcEndpoint(e.i) || e.a
+    const b = arcEndpoint(e.j) || e.b
+    // Route under the cortex: pull the midpoint toward the brain interior.
+    const ctrl = a.clone().add(b).multiplyScalar(0.5 * 0.55)
+    const curve = new THREE.QuadraticBezierCurve3(a, ctrl, b)
+    const segs = e.type === 'local' ? 10 : 18
+    const geo = new THREE.TubeGeometry(curve, segs, radius, 6, false)
+    const mat = new THREE.MeshBasicMaterial({
+      color: new THREE.Color(tractColor(e)),
+      transparent: true, opacity: tractOpts.opacity, depthWrite: false,
+    })
+    tractGroup.add(new THREE.Mesh(geo, mat))
+    count++
+  }
+  updateTractFade()
+  const cnt = document.getElementById('exTractCount')
+  if (cnt) cnt.textContent = `${count} tract${count === 1 ? '' : 's'} shown`
+  needsRender = true
+}
+
+// Apply the current tract opacity to all wires (used by the opacity slider and
+// after a rebuild). Wires now follow the exploded regions rather than fading.
+function updateTractFade() {
+  if (!tractGroup) return
+  for (const t of tractGroup.children) t.material.opacity = tractOpts.opacity
+  needsRender = true
+}
+
+// Single entry point: build or tear down to match tractOpts.show.
+function updateTracts() {
+  if (!THREE || !brain) return
+  if (!tractOpts.show) {
+    disposeTracts()
+    const cnt = document.getElementById('exTractCount'); if (cnt) cnt.textContent = ''
+    needsRender = true
+    return
+  }
+  buildTractGeometry()
+}
+
+// ───── Connections (user-defined arc arrows between regions) ─────
+// Each arc's endpoints are the live world centroids of two regions (base centroid
+// + the region's current explode offset), so arcs re-bend as regions move.
+function arcEndpoint(idx) {
+  const rec = byIndex.get(idx)
+  return rec ? rec.mesh.userData.base.clone().add(rec.mesh.position) : null
+}
+function disposeArcObj(o) {
+  // Also frees the per-arc materials (the old version leaked them) — B3.
+  disposeObject3D(o)
+}
+function makeArcObject(arc) {
+  const g = new THREE.Group()
+  const pA = arcEndpoint(arc.fromIdx), pB = arcEndpoint(arc.toIdx)
+  if (!pA || !pB) return g
+  const dist = Math.max(pA.distanceTo(pB), 1e-3)
+  // A CUBIC Bézier whose two control points both pull toward ONE shared apex
+  // above the midpoint, so the whole connection is a single clean arch. (Lifting
+  // each endpoint independently along its own radial broke down for far-apart
+  // regions on opposite sides — e.g. precentral ↔ cerebellum — where the two
+  // radials point opposite ways, producing an S-shaped curve whose arrowhead
+  // ended up aimed at the wrong region.) The apex sits outside the cortex so the
+  // arch clears the brain; a small radial nudge at each endpoint makes the tube
+  // peel cleanly off the surface instead of staying buried in the mesh.
+  //   outward — arches up and out of the brain surface (default, "out of brain")
+  //   over    — arches straight up over the top
+  //   inward  — dips toward the brain centre (under the cortex)
+  const surf  = brainRadius || 2
+  const route = arc.route || 'outward'
+  const bulge = dist * arc.height
+  const up    = new THREE.Vector3(0, 0, 1)
+  const mid   = pA.clone().add(pB).multiplyScalar(0.5)
+  const dirA  = pA.lengthSq() > 1e-6 ? pA.clone().normalize() : up.clone()
+  const dirB  = pB.lengthSq() > 1e-6 ? pB.clone().normalize() : up.clone()
+  let apex, edgeLift
+  if (route === 'over') {
+    // single apex straight above the midpoint
+    const lift = Math.max(surf - mid.z, 0) + surf * 0.30 + bulge * 0.6
+    apex = mid.clone().addScaledVector(up, lift)
+    edgeLift = up
+  } else if (route === 'inward') {
+    // a shared nadir pulled toward (but not past) the brain centre
+    const mDir = mid.lengthSq() > 1e-6 ? mid.clone().normalize() : up.clone()
+    const dip  = Math.min(mid.length() * 0.7 + surf * 0.1, surf * 0.55)
+    apex = mid.clone().addScaledVector(mDir, -dip)
+    edgeLift = null
+  } else { // 'outward' (default)
+    // apex radially outside the cortex, above the midpoint of the two regions
+    const mDir = mid.lengthSq() > 1e-6 ? mid.clone().normalize() : up.clone()
+    const lift = Math.max(surf - mid.length(), 0) + surf * 0.30 + bulge * 0.6
+    apex = mid.clone().addScaledVector(mDir, lift)
+    edgeLift = null   // use each endpoint's own radial for the peel-off nudge
+  }
+  // Control points: halfway from each endpoint toward the shared apex, plus a
+  // small lift along the surface normal so the tube leaves the cortex cleanly.
+  const nudge = surf * 0.12
+  const c1 = pA.clone().lerp(apex, 0.5).addScaledVector(edgeLift || dirA, route === 'inward' ? 0 : nudge)
+  const c2 = pB.clone().lerp(apex, 0.5).addScaledVector(edgeLift || dirB, route === 'inward' ? 0 : nudge)
+  const curve = new THREE.CubicBezierCurve3(pA, c1, c2, pB)
+  const col = new THREE.Color(arc.color)
+  const sel = arc.id === selectedArc
+  const mat = new THREE.MeshPhongMaterial({
+    color: col, emissive: col.clone().multiplyScalar(sel ? 0.6 : 0.22), shininess: 50,
+    transparent: arc.opacity < 1, opacity: arc.opacity, depthWrite: arc.opacity >= 1,
+  })
+  arc._mat = mat
+  g.add(new THREE.Mesh(new THREE.TubeGeometry(curve, 64, arc.thickness, 10, false), mat))
+  const addHead = (t, sign) => {
+    const cone = new THREE.Mesh(new THREE.ConeGeometry(arc.headSize, arc.headSize * 2.2, 16), mat)
+    cone.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0),
+      curve.getTangent(t).multiplyScalar(sign).normalize())
+    cone.position.copy(curve.getPoint(t))
+    g.add(cone)
+  }
+  if (arc.mode === 'one' || arc.mode === 'two') addHead(1, 1)    // head at target
+  if (arc.mode === 'two') addHead(0, -1)                          // head at source
+  return g
+}
+function rebuildArc(arc) {
+  if (arc._obj) { arcGroup.remove(arc._obj); disposeArcObj(arc._obj) }
+  if (arc._mat) arc._mat.dispose()
+  arc._obj = makeArcObject(arc)
+  arcGroup.add(arc._obj)
+}
+function updateArcs() {
+  if (!arcGroup) return
+  for (const a of arcs) rebuildArc(a)
+  needsRender = true
+}
+function addArc(fromIdx, toIdx) {
+  fromIdx = +fromIdx; toIdx = +toIdx
+  if (!Number.isFinite(fromIdx) || !Number.isFinite(toIdx) || fromIdx === toIdx) {
+    exToast('Pick two different regions', 'err'); return
+  }
+  const arc = {
+    id: ++arcSeq, fromIdx, toIdx,
+    color: '#ffd24a', height: 0.45, thickness: 0.02, headSize: 0.06,
+    mode: 'one', route: 'outward', opacity: 1,
+  }
+  arcs.push(arc); selectedArc = arc.id
+  rebuildArc(arc); needsRender = true
+  renderArcList()
+}
+function removeArc(id) {
+  const i = arcs.findIndex(a => a.id === id)
+  if (i < 0) return
+  const a = arcs[i]
+  if (a._obj) { arcGroup.remove(a._obj); disposeArcObj(a._obj) }
+  if (a._mat) a._mat.dispose()
+  arcs.splice(i, 1)
+  if (selectedArc === id) selectedArc = arcs.length ? arcs[Math.min(i, arcs.length - 1)].id : null
+  needsRender = true
+  renderArcList()
+}
+function selectArc(id) { selectedArc = id; updateArcs(); renderArcList() }
+
+// ── Connect mode (click a source region, then a target) ──
+function setConnectHint(txt) {
+  const el = document.getElementById('exConnectHint'); if (el) el.textContent = txt || ''
+}
+function enterConnectMode() {
+  connectMode = true; connectSrc = null
+  document.getElementById('exConnect').classList.add('active')
+  setConnectHint('Click source…')
+  document.getElementById('exploreHover').textContent = 'Connect mode: click a source region, then a target (Esc to cancel)'
+}
+function exitConnectMode() {
+  connectMode = false; connectSrc = null
+  document.getElementById('exConnect').classList.remove('active')
+  setConnectHint('')
+}
+function toggleConnectMode() { connectMode ? exitConnectMode() : enterConnectMode() }
+function handleConnectClick(e) {
+  const m = pick(e)
+  if (!m) return
+  const idx = m.userData.meta.index
+  if (connectSrc == null) {
+    connectSrc = idx
+    setConnectHint(`Source: ${m.userData.meta.displayName} — click target`)
+  } else {
+    addArc(connectSrc, idx)
+    exitConnectMode()
+  }
+}
+
+// ── Region <select> options + arc list / editor rendering ──
+function regionOptions(selIdx) {
+  return regions.slice().sort((a, b) => a.meta.displayName.localeCompare(b.meta.displayName))
+    .map(r => `<option value="${r.meta.index}"${r.meta.index === selIdx ? ' selected' : ''}>${escapeHtml(r.meta.displayName)}</option>`)
+    .join('')
+}
+function populateArcDropdowns() {
+  const from = document.getElementById('exArcFrom'), to = document.getElementById('exArcTo')
+  if (!from || !to) return
+  from.innerHTML = regionOptions(); to.innerHTML = regionOptions()
+  if (to.options.length > 1) to.selectedIndex = 1   // default From ≠ To
+}
+function renderArcList() {
+  const el = document.getElementById('exArcList')
+  if (!el) return
+  if (!arcs.length) {
+    el.innerHTML = '<div class="file-hint">No connections yet — press “+ Connect” and click two regions, or pick From/To above.</div>'
+    renderArcEditor(); return
+  }
+  el.innerHTML = arcs.map(a => {
+    const A = byIndex.get(a.fromIdx)?.meta.displayName || ('#' + a.fromIdx)
+    const B = byIndex.get(a.toIdx)?.meta.displayName || ('#' + a.toIdx)
+    const sym = a.mode === 'two' ? '↔' : a.mode === 'one' ? '→' : '—'
+    return `<div class="arc-item${a.id === selectedArc ? ' selected' : ''}" data-id="${a.id}">
+      <span class="arc-dot" style="background:${a.color}"></span>
+      <span class="arc-label" title="${A} ${sym} ${B}">${A} ${sym} ${B}</span>
+      <button class="arc-del" data-del="${a.id}" title="Delete connection">×</button>
+    </div>`
+  }).join('')
+  renderArcEditor()
+}
+function renderArcEditor() {
+  const ed = document.getElementById('exArcEditor')
+  if (!ed) return
+  const a = arcs.find(x => x.id === selectedArc)
+  if (!a) { ed.style.display = 'none'; ed.innerHTML = ''; return }
+  ed.style.display = ''
+  ed.innerHTML = `
+    <div class="label-xs">Edit connection</div>
+    <div class="ctrl-row"><span class="ctrl-lbl">Color</span>
+      <input type="color" id="arcColor" value="${a.color}"></div>
+    <div class="ctrl-row"><span class="ctrl-lbl">Heads</span>
+      <select id="arcMode">
+        <option value="one"${a.mode === 'one' ? ' selected' : ''}>One-way →</option>
+        <option value="two"${a.mode === 'two' ? ' selected' : ''}>Two-way ↔</option>
+        <option value="none"${a.mode === 'none' ? ' selected' : ''}>None —</option>
+      </select></div>
+    <div class="ctrl-row"><span class="ctrl-lbl">Route</span>
+      <select id="arcRoute">
+        <option value="outward"${(a.route || 'outward') === 'outward' ? ' selected' : ''}>Outward (out of brain)</option>
+        <option value="over"${a.route === 'over' ? ' selected' : ''}>Over the top</option>
+        <option value="inward"${a.route === 'inward' ? ' selected' : ''}>Inward (under cortex)</option>
+      </select></div>
+    <div class="ctrl-row"><span class="ctrl-lbl">Arc</span>
+      <input type="range" id="arcHeight" min="0" max="120" value="${Math.round(a.height * 100)}">
+      <span class="mm-readout" id="arcHeightRd">${Math.round(a.height * 100)}</span></div>
+    <div class="ctrl-row"><span class="ctrl-lbl">Width</span>
+      <input type="range" id="arcWidth" min="5" max="80" value="${Math.round(a.thickness * 1000)}">
+      <span class="mm-readout" id="arcWidthRd">${Math.round(a.thickness * 1000)}</span></div>
+    <div class="ctrl-row"><span class="ctrl-lbl">Head</span>
+      <input type="range" id="arcHead" min="20" max="200" value="${Math.round(a.headSize * 1000)}">
+      <span class="mm-readout" id="arcHeadRd">${Math.round(a.headSize * 1000)}</span></div>
+    <div class="ctrl-row"><span class="ctrl-lbl">Opacity</span>
+      <input type="range" id="arcOpacity" min="10" max="100" value="${Math.round(a.opacity * 100)}">
+      <span class="mm-readout" id="arcOpacityRd">${Math.round(a.opacity * 100)}%</span></div>
+    <div class="btn-row" style="margin-top:6px;"><button id="arcDelete">Delete connection</button></div>`
+  // Sliders update in place (no editor re-render) so dragging stays smooth.
+  const live = (id, rd, fn, fmt) => {
+    const el = document.getElementById(id)
+    el.oninput = () => { fn(+el.value); document.getElementById(rd).textContent = fmt ? fmt(el.value) : el.value; rebuildArc(a); needsRender = true }
+  }
+  document.getElementById('arcColor').oninput = ev => {
+    a.color = ev.target.value; rebuildArc(a); needsRender = true
+    const dot = document.querySelector(`.arc-item[data-id="${a.id}"] .arc-dot`); if (dot) dot.style.background = a.color
+  }
+  document.getElementById('arcMode').onchange = ev => { a.mode = ev.target.value; rebuildArc(a); needsRender = true; renderArcList() }
+  document.getElementById('arcRoute').onchange = ev => { a.route = ev.target.value; rebuildArc(a); needsRender = true }
+  live('arcHeight', 'arcHeightRd', v => (a.height = v / 100))
+  live('arcWidth', 'arcWidthRd', v => (a.thickness = v / 1000))
+  live('arcHead', 'arcHeadRd', v => (a.headSize = v / 1000))
+  live('arcOpacity', 'arcOpacityRd', v => (a.opacity = v / 100), v => v + '%')
+  document.getElementById('arcDelete').onclick = () => removeArc(a.id)
+}
+
 // ───── UI wiring ─────
 function setupUI() {
   // The global slider/buttons set every region uniformly (bulk); group and
@@ -2931,7 +4375,9 @@ function setupUI() {
   document.getElementById('exLearn').onclick = () => setLearnMode(!learnMode)
   document.getElementById('learnClose').onclick = () => setLearnMode(false)
   window.addEventListener('keydown', e => {
-    if (e.key === 'Escape' && !document.getElementById('view-explore').hidden) selectMesh(null)
+    if (e.key === 'Escape' && !document.getElementById('view-explore').hidden) {
+      if (connectMode) exitConnectMode(); else selectMesh(null)
+    }
   })
 
   // ── Group list (delegated): isolate on header click, explode/opacity sliders ──
@@ -2980,6 +4426,51 @@ function setupUI() {
     hovered = null; applyHighlight()
   })
 
+  // ── White-matter tracts ──
+  const tShow = document.getElementById('exTractShow')
+  tShow.onchange = () => {
+    tractOpts.show = tShow.checked
+    document.getElementById('exTractPanel').hidden = !tShow.checked
+    updateTracts()
+  }
+  const tFilter = document.getElementById('exTractFilter')
+  const tNet = document.getElementById('exTractNetwork')
+  tNet.innerHTML = '<option value="all">All networks</option>' +
+    Object.keys(NETWORK_COLORS).filter(k => k !== 'Other')
+      .map(k => `<option value="${k}">${k}</option>`).join('')
+  tFilter.onchange = () => {
+    tractOpts.filter = tFilter.value
+    tNet.hidden = tFilter.value !== 'network'
+    updateTracts()
+  }
+  tNet.onchange = () => { tractOpts.network = tNet.value; updateTracts() }
+  ;[['exTractCommissural', 'commissural'], ['exTractAssociation', 'association'],
+    ['exTractLocal', 'local'], ['exTractProjection', 'projection']].forEach(([id, type]) => {
+    document.getElementById(id).onchange = e => { tractOpts.types[type] = e.target.checked; updateTracts() }
+  })
+  const tDens = document.getElementById('exTractDensity')
+  tDens.oninput = () => { tractOpts.density = +tDens.value / 100; if (tractOpts.show) buildTractGeometry() }
+  const tThick = document.getElementById('exTractThick')
+  tThick.oninput = () => { tractOpts.thickness = +tThick.value / 100; if (tractOpts.show) buildTractGeometry() }
+  const tOp = document.getElementById('exTractOpacity')
+  tOp.oninput = () => { tractOpts.opacity = +tOp.value / 100; updateTractFade() }
+  const tCol = document.getElementById('exTractColor')
+  tCol.onchange = () => { tractOpts.colorBy = tCol.value; if (tractOpts.show) buildTractGeometry() }
+
+  // ── Connections (arc arrows) ──
+  populateArcDropdowns()
+  document.getElementById('exConnect').onclick = () => toggleConnectMode()
+  document.getElementById('exArcAdd').onclick = () =>
+    addArc(document.getElementById('exArcFrom').value, document.getElementById('exArcTo').value)
+  const arcListEl = document.getElementById('exArcList')
+  arcListEl.addEventListener('click', e => {
+    const del = e.target.closest('.arc-del')
+    if (del) { removeArc(+del.dataset.del); return }
+    const row = e.target.closest('.arc-item')
+    if (row) selectArc(+row.dataset.id)
+  })
+  renderArcList()
+
   renderGroups(); renderRegionList()
 }
 
@@ -3021,6 +4512,876 @@ function animate() {
   if (spin) { orb.theta += 0.0035; syncCam() }
   if (needsRender) { renderer.render(scene, camera); syncGizmo(); needsRender = false }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   fMRI TAB — activation time-course playback on the AAL3 brain
+   Its own Three.js scene (sharing the cached bundle + Three import). A time ×
+   region activation matrix colours each region per frame; a transport "feeds"
+   the current timepoint and a reference signal is plotted alongside. Ships with
+   a synthetic block-design dummy; the user can drop in their own CSVs.
+   ═══════════════════════════════════════════════════════════════════════ */
+const F = {
+  renderer: null, scene: null, camera: null, brain: null,
+  raycaster: null, pointer: null, tmp: null,
+  orb: { target: null, radius: 11, theta: 0, phi: 1.1 }, initOrb: null,
+  regions: [], byIndex: new Map(), N: 0, T: 0, TR: 2,
+  act: null, feeder: null, feederT: null, feederName: 'Feeder · task design',
+  t: 0, idx: -1, playing: false, speed: 4, loop: true, lastNow: 0,
+  vmaxRaw: 1, vmax: 1, gain: 1, thresh: 0.2, cmap: 'hot', feedSel: false, source: 'dummy',
+  hovered: null, selected: null, need: true,
+}
+
+// NiiVue triple-slice strip (axial / sagittal / coronal). Built lazily once the
+// fMRI tab opens; the AAL atlas overlay is recoloured by activation each frame.
+const FS = { nv: null, ready: false, labels: [], labelToCol: null, failed: false, atlasImg: null }
+
+async function fmriInit() {
+  const msg = document.getElementById('fmriLoadingMsg')
+  try {
+    msg.textContent = 'Loading 3D engine…'
+    if (!THREE) THREE = await importThree()
+    msg.textContent = 'Fetching brain meshes…'
+    const bundle = await getBundle()
+    fmriBuildScene(bundle)
+    fmriGenerateDummy()
+    fmriSetupUI()
+    fmriApplyData()
+    document.getElementById('fmriLoading').classList.remove('active')
+    fmriStartAnim()
+    fmriInitSlices()   // builds the NiiVue slice strip in the background
+
+  } catch (e) {
+    console.error(e)
+    msg.style.color = 'var(--danger)'; msg.style.whiteSpace = 'pre-wrap'
+    msg.style.textAlign = 'center'; msg.style.padding = '0 24px'; msg.style.fontFamily = 'monospace'
+    msg.textContent = 'Error: ' + (e.message || e)
+  }
+}
+
+function fmriBuildScene(bundle) {
+  const canvas = document.getElementById('glFmri')
+  F.renderer = new THREE.WebGLRenderer({ canvas, antialias: true })
+  F.renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
+  F.scene = new THREE.Scene(); F.scene.background = new THREE.Color('#06080d')
+  F.camera = new THREE.PerspectiveCamera(45, 1, 0.05, 200)
+  F.camera.up.set(0, 0, 1); F.camera.position.set(6, -8, 5)
+  F.scene.add(new THREE.AmbientLight(0xffffff, 0.5))
+  const d1 = new THREE.DirectionalLight(0xffffff, 0.7); d1.position.set(5, -6, 8); F.scene.add(d1)
+  const d2 = new THREE.DirectionalLight(0x8899bb, 0.35); d2.position.set(-6, 5, -3); F.scene.add(d2)
+  F.brain = new THREE.Group(); F.scene.add(F.brain)
+  F.raycaster = new THREE.Raycaster(); F.pointer = new THREE.Vector2(); F.tmp = new THREE.Vector3()
+  F.orb.target = new THREE.Vector3(0, 0, 0)
+  F.regions = []; F.byIndex = new Map()
+  bundle.regions.forEach((r, i) => {
+    const geo = new THREE.BufferGeometry()
+    geo.setAttribute('position', new THREE.BufferAttribute(b64decode(r.positions, Float32Array), 3))
+    geo.setIndex(new THREE.BufferAttribute(b64decode(r.indices, Uint32Array), 1))
+    geo.computeVertexNormals()
+    const mat = new THREE.MeshPhongMaterial({ color: 0x20242e, emissive: 0x000000, shininess: 18, specular: 0x222222 })
+    const mesh = new THREE.Mesh(geo, mat)
+    mesh.userData = { meta: r, col: i, fullGeo: geo }
+    F.brain.add(mesh)
+    const rec = { meta: r, mesh, col: i }
+    F.regions.push(rec); F.byIndex.set(r.index, rec)
+  })
+  F.N = F.regions.length
+  applyMeshLOD(F.regions, MESH_QFRAC[meshQuality])
+  fmriInitOrbit(canvas)
+  new ResizeObserver(() => fmriResize()).observe(document.getElementById('fmriRender'))
+  fmriResize()
+}
+
+// ── Orbit (shared Z-up controls, wired to the `F` state object) ──
+const fmriOrbit = makeOrbitController({
+  getCamera: () => F.camera,
+  orb: F.orb,
+  getTmp: () => F.tmp,
+  onChange: () => { F.need = true },
+  onHover: e => fmriHover(e),
+  onClick: e => fmriClick(e),
+  setInitOrb: o => { F.initOrb = o },
+})
+function fmriSyncCam() { fmriOrbit.syncCam() }
+function fmriInitOrbit(canvas) { fmriOrbit.attach(canvas) }
+function fmriResetView() { Object.assign(F.orb, F.initOrb); F.orb.target.set(0, 0, 0); fmriSyncCam() }
+function fmriResize() {
+  if (!F.renderer) return
+  const v = document.getElementById('fmriRender'); const w = v.clientWidth || 1, h = v.clientHeight || 1
+  F.renderer.setSize(w, h, false); F.camera.aspect = w / h; F.camera.updateProjectionMatrix(); F.need = true
+  fmriDrawPlot()
+  try { if (FS.nv) FS.nv.resizeListener() } catch (_) {}
+}
+
+// ── Picking ──
+function fmriPick(e) {
+  return raycastPick(F.renderer, F.raycaster, F.pointer, F.camera, F.brain.children, e)
+}
+function fmriValue(idx, col) { return (F.act && idx >= 0) ? F.act[idx * F.N + col] : 0 }
+function fmriHover(e) {
+  const m = fmriPick(e); if (m === F.hovered) return; F.hovered = m
+  const el = document.getElementById('fmriHover')
+  if (m) {
+    const meta = m.userData.meta, v = fmriValue(F.idx, m.userData.col)
+    el.textContent = `${meta.displayName} · ${meta.network} · value ${v >= 0 ? '+' : ''}${v.toFixed(2)}`
+  } else el.textContent = 'Press ▶ Play · hover a region to identify · drag to orbit'
+}
+function fmriClick(e) { fmriSelect(fmriPick(e)) }
+function fmriSelect(m) {
+  F.selected = m
+  document.getElementById('fmriSel').textContent = m ? `Selected: ${m.userData.meta.displayName}` : ''
+  const sl = document.getElementById('fmSelLegend')
+  if (m) { sl.hidden = false; document.getElementById('fmSelName').textContent = m.userData.meta.displayName }
+  else sl.hidden = true
+  fmriRebuildFeederT(); fmriDrawPlot()
+}
+
+// ── Dummy data: a synthetic block design ──
+// Functional networks switch on in turn; each region follows its network's
+// HRF-convolved boxcar, plus Gaussian noise. The feeder is the task design.
+function fmriGenerateDummy() {
+  const N = F.N, T = 160, TR = 2
+  const act = new Float32Array(T * N)
+  const nets = ['Visual', 'Somatomotor', 'DorsalAttention', 'Salience', 'Frontoparietal', 'Limbic', 'DefaultMode']
+  const blockLen = 14, restLen = 6, cycle = blockLen + restLen
+  const activeNet = new Array(T).fill(null)
+  const design = new Float32Array(T)
+  for (let t = 0; t < T; t++) {
+    if (t % cycle < blockLen) { activeNet[t] = nets[Math.floor(t / cycle) % nets.length]; design[t] = 1 }
+  }
+  const hrf = [0, 0.04, 0.18, 0.45, 0.78, 1.0, 0.92, 0.66, 0.38, 0.16, 0.02, -0.06, -0.08, -0.05, -0.02]
+  const conv = box => {
+    const out = new Float32Array(T)
+    for (let t = 0; t < T; t++) { let s = 0; for (let k = 0; k < hrf.length; k++) if (t - k >= 0) s += box[t - k] * hrf[k]; out[t] = s }
+    return out
+  }
+  const feeder = conv(design)
+  const netResp = {}
+  for (const nt of nets) {
+    const box = new Float32Array(T)
+    for (let t = 0; t < T; t++) box[t] = activeNet[t] === nt ? 1 : 0
+    netResp[nt] = conv(box)
+  }
+  const randn = () => { let u = 0, v = 0; while (!u) u = Math.random(); while (!v) v = Math.random(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v) }
+  for (let p = 0; p < N; p++) {
+    const net = F.regions[p].meta.network
+    const resp = netResp[net]
+    for (let t = 0; t < T; t++) {
+      let v = 0.18 * randn()
+      if (resp) v += resp[t] * 1.6
+      act[t * N + p] = v
+    }
+  }
+  F.act = act; F.T = T; F.TR = TR; F.feeder = feeder; F.feederName = 'Feeder · task design'; F.source = 'dummy'
+}
+
+// ── CSV ingest ──
+function fmriParseMatrix(text) {
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.length && !l.startsWith('#'))
+  const split = l => l.split(/[,\t]+/).map(s => s.trim()).filter(s => s.length)
+  if (!lines.length) return { header: null, rows: [] }
+  const first = split(lines[0])
+  const numeric = first.length && first.every(t => t !== '' && !isNaN(Number(t)))
+  const header = numeric ? null : first
+  const body = numeric ? lines : lines.slice(1)
+  const rows = body.map(l => split(l).map(Number)).filter(r => r.length && r.every(v => !isNaN(v)))
+  return { header, rows }
+}
+function fmriBuildActFromCSV(text) {
+  const { header, rows } = fmriParseMatrix(text)
+  if (!rows.length) throw new Error('No numeric rows found in the file.')
+  const T = rows.length, cols = rows[0].length, N = F.N
+  let colOf = null
+  if (header) {
+    const norm = s => String(s).toLowerCase().replace(/[^a-z0-9]/g, '')
+    const map = new Map(header.map((h, i) => [norm(h), i]))
+    let hit = 0
+    colOf = F.regions.map(r => {
+      for (const c of [norm(r.meta.name), norm(r.meta.displayName), norm(String(r.meta.index))])
+        if (map.has(c)) { hit++; return map.get(c) }
+      return -1
+    })
+    if (hit < N * 0.5) colOf = null   // too few matched — fall back to column order
+  }
+  if (!colOf) {
+    if (cols !== N) throw new Error(`Expected ${N} columns (one per region) but found ${cols}.\nAdd a header row of region names to map by name.`)
+    colOf = F.regions.map((_, i) => i)
+  }
+  const act = new Float32Array(T * N)
+  for (let t = 0; t < T; t++) {
+    const row = rows[t]
+    for (let p = 0; p < N; p++) { const c = colOf[p]; act[t * N + p] = (c >= 0 && c < row.length) ? row[c] : 0 }
+  }
+  return { act, T, N }
+}
+function fmriParseFeeder(text) {
+  return Float32Array.from(
+    text.split(/[\s,\t\r\n]+/).map(s => s.trim()).filter(s => s.length && !isNaN(Number(s))).map(Number))
+}
+function fmriIsNifti(file) {
+  return /\.nii(\.gz)?$/i.test(file.name) || /\.gz$/i.test(file.name)
+}
+async function fmriLoadAct(file) {
+  if (!file) return
+  try {
+    let act, T, N
+    if (fmriIsNifti(file)) {
+      fmriToast('Parcellating fMRI volume…');
+      ({ act, T, N } = await fmriBuildActFromNifti(file))
+    } else {
+      ({ act, T, N } = fmriBuildActFromCSV(await file.text()))
+    }
+    F.act = act; F.T = T; F.source = 'user'; F.feeder = null; F.feederName = 'Feeder · global mean'
+    document.getElementById('fmSrcTag').textContent = file.name
+    fmriApplyData()
+    fmriToast(`Loaded ${T} × ${N} activations`)
+  } catch (err) { console.error(err); fmriToast(String(err.message || err), 'err') }
+}
+
+// ── 4-D NIfTI ingest ──────────────────────────────────────────────────────
+// A BOLD time series (X×Y×Z×T) is parcellated against the bundled AAL atlas:
+// every fMRI voxel is mapped through world (MNI) coordinates to an atlas label,
+// and each region's signal is the spatial mean of its voxels per timepoint.
+// Means are then z-scored per region so the (signed, ~unit) colour scale and the
+// dummy/CSV pipeline behave identically.
+function fmriAffineOf(img) {
+  // NVImage exposes the voxel→world (mm) affine as hdr.affine (4×4, row-major).
+  const a = img.hdr && img.hdr.affine
+  if (!a) throw new Error('NIfTI has no spatial affine (qform/sform).')
+  return a.length === 4 ? [a[0].slice(), a[1].slice(), a[2].slice(), a[3].slice()]
+                        : [a.slice(0, 4), a.slice(4, 8), a.slice(8, 12), a.slice(12, 16)]
+}
+function fmriInvAffine(m) {
+  // Inverse of an affine 4×4 (3×3 linear block + translation).
+  const a = m[0][0], b = m[0][1], c = m[0][2], d = m[1][0], e = m[1][1], f = m[1][2],
+        g = m[2][0], h = m[2][1], i = m[2][2]
+  const A = e * i - f * h, B = -(d * i - f * g), C = d * h - e * g
+  const det = a * A + b * B + c * C
+  if (!det) throw new Error('Singular NIfTI affine.')
+  const id = 1 / det
+  const inv3 = [
+    [A * id, (c * h - b * i) * id, (b * f - c * e) * id],
+    [B * id, (a * i - c * g) * id, (c * d - a * f) * id],
+    [C * id, (b * g - a * h) * id, (a * e - b * d) * id],
+  ]
+  const tx = m[0][3], ty = m[1][3], tz = m[2][3]
+  const t = [
+    -(inv3[0][0] * tx + inv3[0][1] * ty + inv3[0][2] * tz),
+    -(inv3[1][0] * tx + inv3[1][1] * ty + inv3[1][2] * tz),
+    -(inv3[2][0] * tx + inv3[2][1] * ty + inv3[2][2] * tz),
+  ]
+  return [[...inv3[0], t[0]], [...inv3[1], t[1]], [...inv3[2], t[2]], [0, 0, 0, 1]]
+}
+// Load the AAL atlas volume + label→region-column map once, lazily. Reuses the
+// slice strip's mapping (FS.labelToCol) when it has already been built.
+async function fmriEnsureAtlas() {
+  const lib = await fmriWaitNiivue()
+  if (!FS.atlasImg) FS.atlasImg = await lib.NVImage.loadFromUrl({ url: '/cache/aal.nii.gz' })
+  if (!FS.labelToCol) {
+    const txt = await (await fetch('/labels/aal.txt')).text()
+    FS.labels = txt.split('\n').map(l => l.trim()).filter(Boolean).map(l => {
+      const p = l.split(/\s+/); return { index: parseInt(p[0]), name: p[1] }
+    }).filter(r => !isNaN(r.index) && r.name)
+    fmriBuildLabelToCol()
+  }
+  return FS.atlasImg
+}
+async function fmriBuildActFromNifti(file) {
+  const lib = await fmriWaitNiivue()
+  const img = await lib.NVImage.loadFromFile({ file, name: file.name })
+  const atlas = await fmriEnsureAtlas()
+
+  const dims = img.hdr.dims
+  const nx = dims[1], ny = dims[2], nz = dims[3], T = Math.max(1, dims[4] | 0)
+  const nvox = nx * ny * nz
+  if (!nvox) throw new Error('NIfTI has no spatial dimensions.')
+  const slope = img.hdr.scl_slope || 1, inter = img.hdr.scl_inter || 0
+  const data = img.img   // raw voxels, on-disk order (i fastest … then j, k, t)
+  if (data.length < nvox * T) throw new Error('NIfTI data shorter than its header dimensions.')
+
+  // Atlas lookup setup
+  const aDims = atlas.hdr.dims, anx = aDims[1], any = aDims[2], anz = aDims[3]
+  const aData = atlas.img
+  const vox2mm = fmriAffineOf(img)        // fMRI voxel → MNI mm
+  const mm2avox = fmriInvAffine(fmriAffineOf(atlas))   // MNI mm → atlas voxel
+
+  // Map every fMRI voxel to a region column via its atlas label (-1 = none).
+  const N = F.N
+  const colMap = new Int32Array(nvox).fill(-1)
+  let labelled = 0
+  for (let k = 0; k < nz; k++) for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+    const wx = vox2mm[0][0] * i + vox2mm[0][1] * j + vox2mm[0][2] * k + vox2mm[0][3]
+    const wy = vox2mm[1][0] * i + vox2mm[1][1] * j + vox2mm[1][2] * k + vox2mm[1][3]
+    const wz = vox2mm[2][0] * i + vox2mm[2][1] * j + vox2mm[2][2] * k + vox2mm[2][3]
+    const ai = Math.round(mm2avox[0][0] * wx + mm2avox[0][1] * wy + mm2avox[0][2] * wz + mm2avox[0][3])
+    const aj = Math.round(mm2avox[1][0] * wx + mm2avox[1][1] * wy + mm2avox[1][2] * wz + mm2avox[1][3])
+    const ak = Math.round(mm2avox[2][0] * wx + mm2avox[2][1] * wy + mm2avox[2][2] * wz + mm2avox[2][3])
+    if (ai < 0 || ai >= anx || aj < 0 || aj >= any || ak < 0 || ak >= anz) continue
+    const lab = aData[ai + anx * (aj + any * ak)]
+    if (!lab) continue
+    const col = FS.labelToCol[lab]
+    if (col == null || col < 0) continue
+    colMap[i + nx * (j + ny * k)] = col
+    labelled++
+  }
+  if (!labelled) throw new Error('No fMRI voxels fell inside the AAL atlas. Is the volume in MNI space?')
+
+  // Spatial mean per region per timepoint (contiguous reads of img over voxels).
+  const counts = new Int32Array(N)
+  for (let v = 0; v < nvox; v++) { const c = colMap[v]; if (c >= 0) counts[c]++ }
+  const sums = new Float64Array(T * N)
+  for (let t = 0; t < T; t++) {
+    const base = t * nvox, out = t * N
+    for (let v = 0; v < nvox; v++) {
+      const c = colMap[v]
+      if (c >= 0) sums[out + c] += data[base + v] * slope + inter
+    }
+  }
+  // z-score each region's time course so values are signed and ~unit scale.
+  const act = new Float32Array(T * N)
+  for (let c = 0; c < N; c++) {
+    const n = counts[c]; if (!n) continue
+    let mean = 0
+    for (let t = 0; t < T; t++) mean += sums[t * N + c] / n
+    mean /= T
+    let varr = 0
+    for (let t = 0; t < T; t++) { const x = sums[t * N + c] / n - mean; varr += x * x }
+    const sd = Math.sqrt(varr / Math.max(1, T)) || 1
+    for (let t = 0; t < T; t++) act[t * N + c] = (sums[t * N + c] / n - mean) / sd
+  }
+
+  // TR from pixdim[4] when present (seconds).
+  const tr = img.hdr.pixDims ? img.hdr.pixDims[4] : (img.hdr.pixdim && img.hdr.pixdim[4])
+  if (tr && tr > 0 && tr < 100) F.TR = tr
+  const matched = counts.reduce((a, n) => a + (n > 0 ? 1 : 0), 0)
+  if (window.diag) window.diag('info', `fMRI NIfTI: ${T}×${N}, ${labelled} voxels in atlas, ${matched}/${N} regions covered`)
+  return { act, T, N }
+}
+async function fmriLoadFeeder(file) {
+  if (!file) return
+  try {
+    const f = fmriParseFeeder(await file.text())
+    if (!f.length) throw new Error('No numeric values found in the feeder file.')
+    F.feeder = f; F.feederName = 'Feeder · uploaded'
+    fmriRebuildFeederT(); fmriDrawPlot()
+    fmriToast(`Loaded feeder (${f.length} values)`)
+  } catch (err) { console.error(err); fmriToast(String(err.message || err), 'err') }
+}
+
+// ── Apply a freshly-set activation matrix (dummy or user) ──
+function fmriApplyData() {
+  F.t = 0; F.idx = -1; F.playing = false; fmriPlayLabel()
+  let mx = 1e-6
+  for (let i = 0; i < F.act.length; i++) { const a = Math.abs(F.act[i]); if (a > mx) mx = a }
+  F.vmaxRaw = mx; fmriUpdateGain()
+  const scrub = document.getElementById('fmScrub'); scrub.max = Math.max(0, F.T - 1); scrub.value = 0
+  document.getElementById('fmDataInfo').textContent = `${F.T} timepoints · ${F.N} regions · TR ${F.TR}s`
+  fmriRebuildFeederT(); fmriUpdateLegend(); fmriRecolor(0, true); fmriUpdateTime(); fmriDrawPlot()
+}
+function fmriUpdateGain() { F.vmax = F.vmaxRaw / (F.gain || 1) }
+
+// ── Colour mapping (per frame) ──
+function fmriColor(mat, v) {
+  const n = Math.max(-1, Math.min(1, v / F.vmax)), m = Math.abs(n)
+  if (m < F.thresh) { mat.color.setRGB(0.11, 0.12, 0.15); mat.emissive.setRGB(0, 0, 0); return }
+  let r, g, b
+  if (F.cmap === 'coolwarm') {
+    if (n >= 0) { r = 0.5 + 0.5 * m; g = 0.12 + 0.6 * m; b = 0.08 }
+    else { r = 0.08; g = 0.22 + 0.45 * m; b = 0.55 + 0.45 * m }
+  } else {
+    r = Math.min(1, 1.4 * m); g = Math.max(0, Math.min(1, 1.4 * m - 0.45)); b = Math.max(0, Math.min(1, 1.4 * m - 1.0))
+  }
+  mat.color.setRGB(r, g, b)
+  const ei = 0.25 + 0.7 * m
+  mat.emissive.setRGB(r * ei, g * ei, b * ei)
+}
+function fmriRecolor(idx, force) {
+  if (!F.act) return
+  if (idx === F.idx && !force) return
+  F.idx = idx
+  const base = idx * F.N
+  for (let p = 0; p < F.N; p++) fmriColor(F.regions[p].mesh.material, F.act[base + p])
+  fmriUpdateSlices()   // recolour the NiiVue atlas overlay to match
+  F.need = true
+}
+function fmriUpdateLegend() {
+  const bar = document.getElementById('fmLegendBar')
+  const lo = document.getElementById('fmLegendLo'), hi = document.getElementById('fmLegendHi')
+  const title = document.getElementById('fmLegendTitle'), vm = F.vmax
+  if (F.cmap === 'coolwarm') {
+    bar.style.background = 'linear-gradient(90deg,#1aa0ff,#0a3a66,#15181f,#7a1f10,#ffd400)'
+    lo.textContent = '−' + vm.toFixed(1); hi.textContent = '+' + vm.toFixed(1); title.textContent = 'Activation (signed)'
+  } else {
+    bar.style.background = 'linear-gradient(90deg,#1c1f27,#b30000,#ff6a00,#ffd400,#ffffe0)'
+    lo.textContent = '0'; hi.textContent = '+' + vm.toFixed(1); title.textContent = 'Activation (magnitude)'
+  }
+}
+
+// ── Feeder / reference trace ──
+function fmriActiveFeeder() {
+  if (F.feedSel && F.selected) {
+    const col = F.selected.userData.col, a = new Float32Array(F.T)
+    for (let t = 0; t < F.T; t++) a[t] = F.act[t * F.N + col]
+    return a
+  }
+  const f = F.feeder
+  if (f && f.length === F.T) return f
+  if (f && f.length > 1) {
+    const a = new Float32Array(F.T)
+    for (let t = 0; t < F.T; t++) a[t] = f[Math.round(t / (F.T - 1) * (f.length - 1))]
+    return a
+  }
+  const a = new Float32Array(F.T)   // fallback: global mean |activation|
+  for (let t = 0; t < F.T; t++) { let s = 0; for (let p = 0; p < F.N; p++) s += Math.abs(F.act[t * F.N + p]); a[t] = s / F.N }
+  return a
+}
+function fmriRebuildFeederT() {
+  F.feederT = fmriActiveFeeder()
+  const nm = (F.feedSel && F.selected) ? `Feeder · ${F.selected.userData.meta.displayName}` : F.feederName
+  document.getElementById('fmFeedName').textContent = nm
+}
+function fmriDrawPlot() {
+  const cv = document.getElementById('fmriPlot'); if (!cv || !F.feederT) return
+  const dpr = Math.min(devicePixelRatio, 2)
+  const w = cv.clientWidth || 300, h = cv.clientHeight || 92
+  cv.width = w * dpr; cv.height = h * dpr
+  const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, h)
+  const T = F.T, pad = 4
+  const line = (arr, color, lw) => {
+    let mn = Infinity, mx = -Infinity
+    for (const v of arr) { if (v < mn) mn = v; if (v > mx) mx = v }
+    if (mx - mn < 1e-6) mx = mn + 1
+    g.beginPath(); g.strokeStyle = color; g.lineWidth = lw
+    for (let t = 0; t < T; t++) {
+      const x = pad + (w - 2 * pad) * (T < 2 ? 0 : t / (T - 1))
+      const y = h - pad - (h - 2 * pad) * ((arr[t] - mn) / (mx - mn))
+      t ? g.lineTo(x, y) : g.moveTo(x, y)
+    }
+    g.stroke()
+  }
+  g.strokeStyle = 'rgba(255,255,255,0.06)'; g.lineWidth = 1
+  g.beginPath(); g.moveTo(pad, h / 2); g.lineTo(w - pad, h / 2); g.stroke()
+  if (F.selected && !F.feedSel) {
+    const col = F.selected.userData.col, a = new Float32Array(T)
+    for (let t = 0; t < T; t++) a[t] = F.act[t * F.N + col]
+    line(a, '#f6c744', 1.3)
+  }
+  line(F.feederT, '#58a6ff', 1.8)
+  const xh = pad + (w - 2 * pad) * (T < 2 ? 0 : F.idx / (T - 1))
+  g.strokeStyle = 'rgba(255,255,255,0.85)'; g.lineWidth = 1.5
+  g.beginPath(); g.moveTo(xh, 0); g.lineTo(xh, h); g.stroke()
+}
+
+// ── Transport ──
+function fmriPlayLabel() { document.getElementById('fmPlay').textContent = F.playing ? '⏸ Pause' : '▶ Play' }
+function fmriSetPlaying(on) { F.playing = on; F.lastNow = performance.now(); fmriPlayLabel() }
+function fmriSeek(idx) {
+  idx = Math.max(0, Math.min(F.T - 1, idx)); F.t = idx
+  fmriRecolor(idx); document.getElementById('fmScrub').value = idx; fmriUpdateTime(); fmriDrawPlot()
+}
+function fmriUpdateTime() {
+  document.getElementById('fmTime').textContent =
+    `TR ${Math.max(0, F.idx)} / ${Math.max(0, F.T - 1)} · ${(Math.max(0, F.idx) * F.TR).toFixed(1)} s`
+}
+function fmriToast(msg, type) {
+  const el = document.getElementById('fmriToast')
+  el.textContent = msg; el.className = type === 'err' ? 'show err' : 'show'
+  clearTimeout(el._t); el._t = setTimeout(() => el.classList.remove('show'), 3200)
+}
+function fmriSavePNG() {
+  F.renderer.render(F.scene, F.camera)
+  const a = document.createElement('a')
+  a.href = F.renderer.domElement.toDataURL('image/png')
+  a.download = `brain_fmri_TR${Math.max(0, F.idx)}_${Date.now()}.png`
+  a.click(); fmriToast('PNG saved')
+}
+
+function fmriSetupUI() {
+  document.getElementById('fmReset').onclick = () => fmriResetView()
+  document.getElementById('fmScreenshot').onclick = () => fmriSavePNG()
+  document.getElementById('fmPlay').onclick = () => fmriSetPlaying(!F.playing)
+  document.getElementById('fmStop').onclick = () => { F.playing = false; fmriPlayLabel(); fmriSeek(0) }
+  document.getElementById('fmLoop').onchange = e => (F.loop = e.target.checked)
+  const scrub = document.getElementById('fmScrub')
+  scrub.oninput = () => fmriSeek(+scrub.value)
+  document.getElementById('fmSpeed').onchange = e => (F.speed = +e.target.value)
+  const cmap = document.getElementById('fmCmap')
+  cmap.onchange = () => { F.cmap = cmap.value; fmriUpdateLegend(); fmriRecolor(F.idx, true) }
+  const thr = document.getElementById('fmThresh')
+  thr.oninput = () => { F.thresh = +thr.value / 100; document.getElementById('fmThreshRd').textContent = F.thresh.toFixed(2); fmriRecolor(F.idx, true) }
+  const gain = document.getElementById('fmGain')
+  gain.oninput = () => { F.gain = +gain.value / 100; fmriUpdateGain(); fmriUpdateLegend(); fmriRecolor(F.idx, true) }
+  const fs = document.getElementById('fmFeedSel')
+  fs.onchange = () => { F.feedSel = fs.checked; fmriRebuildFeederT(); fmriDrawPlot() }
+  document.getElementById('fmActFile').onchange = e => fmriLoadAct(e.target.files[0])
+  document.getElementById('fmFeedFile').onchange = e => fmriLoadFeeder(e.target.files[0])
+  document.getElementById('fmResetData').onclick = () => {
+    fmriGenerateDummy(); document.getElementById('fmSrcTag').textContent = 'Dummy (block design)'
+    document.getElementById('fmFeedSel').checked = false; F.feedSel = false
+    fmriApplyData(); fmriToast('Reset to dummy data')
+  }
+  const cv = document.getElementById('fmriPlot')
+  cv.addEventListener('pointerdown', e => {
+    const rect = cv.getBoundingClientRect()
+    fmriSeek(Math.round((e.clientX - rect.left) / rect.width * (F.T - 1)))
+  })
+  window.addEventListener('keydown', e => {
+    if (document.getElementById('view-fmri').hidden) return
+    if (e.code === 'Space') { e.preventDefault(); fmriSetPlaying(!F.playing) }
+  })
+  document.getElementById('fmThreshRd').textContent = F.thresh.toFixed(2)
+}
+
+// ── NiiVue triple-slice strip ──
+// Real axial/sagittal/coronal MRI slices (like the Figure tab): MNI152 anatomy
+// with the AAL atlas overlaid, recoloured per timepoint by activation. Because
+// the meshes are AAL3 but the bundled volume is AAL(116), the activation is
+// mapped onto the atlas labels by region name (≈108/116 match; the rest stay
+// transparent, showing bare anatomy).
+function fmriWaitNiivue(timeoutMs = 20000) {
+  return new Promise((resolve, reject) => {
+    const t0 = performance.now()
+    const tick = () => {
+      if (window.NiivueLib) return resolve(window.NiivueLib)
+      if (performance.now() - t0 > timeoutMs) return reject(new Error('NiiVue not available'))
+      setTimeout(tick, 120)
+    }
+    tick()
+  })
+}
+function fmriNormName(s) {
+  s = String(s).toLowerCase()
+    .replace(/cerebelum|cerebellum/g, 'cereb')   // AAL vs AAL3 spelling
+    .replace(/cingulum|cingulate/g, 'cingul')
+  return s.replace(/[^a-z0-9]/g, '').replace(/[0-9]/g, '')
+}
+function fmriBuildLabelToCol() {
+  const colByName = new Map()
+  F.regions.forEach((r, i) => colByName.set(fmriNormName(r.meta.name), i))
+  FS.labelToCol = {}
+  let hit = 0
+  for (const lab of FS.labels) {
+    const c = colByName.has(fmriNormName(lab.name)) ? colByName.get(fmriNormName(lab.name)) : -1
+    FS.labelToCol[lab.index] = c
+    if (c >= 0) hit++
+  }
+  if (window.diag) window.diag('info', `fMRI slices: ${hit}/${FS.labels.length} AAL labels matched to AAL3 regions`)
+}
+// Activation → RGBA bytes (same colour ramp as the 3-D meshes; A=0 below threshold).
+function fmriRGBA(v) {
+  const n = Math.max(-1, Math.min(1, v / F.vmax)), m = Math.abs(n)
+  if (m < F.thresh) return [0, 0, 0, 0]
+  let r, g, b
+  if (F.cmap === 'coolwarm') {
+    if (n >= 0) { r = 0.5 + 0.5 * m; g = 0.12 + 0.6 * m; b = 0.08 }
+    else { r = 0.08; g = 0.22 + 0.45 * m; b = 0.55 + 0.45 * m }
+  } else {
+    r = Math.min(1, 1.4 * m); g = Math.max(0, Math.min(1, 1.4 * m - 0.45)); b = Math.max(0, Math.min(1, 1.4 * m - 1.0))
+  }
+  return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255), Math.round((0.55 + 0.45 * m) * 255)]
+}
+function fmriBuildSliceLUT() {
+  const R = [0], G = [0], B = [0], A = [0], I = [0], labels = ['Background']
+  const base = Math.max(0, F.idx) * F.N
+  for (const lab of FS.labels) {
+    const col = FS.labelToCol[lab.index]
+    const c = (col >= 0 && F.idx >= 0) ? fmriRGBA(F.act[base + col]) : [0, 0, 0, 0]
+    R.push(c[0]); G.push(c[1]); B.push(c[2]); A.push(c[3]); I.push(lab.index); labels.push(lab.name)
+  }
+  return { R, G, B, A, I, labels }
+}
+function fmriUpdateSlices() {
+  if (!FS.ready || !FS.nv || FS.nv.volumes.length < 2) return
+  FS.nv.volumes[1].setColormapLabel(fmriBuildSliceLUT())
+  FS.nv.updateGLVolume()
+}
+async function fmriInitSlices() {
+  const strip = document.getElementById('fmriSliceStrip')
+  const msgEl = document.getElementById('fmriSliceMsg')
+  try {
+    const lib = await fmriWaitNiivue()
+    msgEl.style.display = 'flex'
+    FS.nv = new lib.Niivue({
+      show3Dcrosshair: false, backColor: [0.02, 0.03, 0.05, 1],
+      crosshairColor: [0.95, 0.55, 0.15, 1], logging: false,
+    })
+    await FS.nv.attachTo('fmriSlices')
+    FS.nv.opts.multiplanarShowRender = lib.SHOW_RENDER.NEVER
+    FS.nv.opts.crosshairGap = 6
+    FS.nv.setMultiplanarPadPixels(4)
+    await FS.nv.loadVolumes([{ url: '/cache/mni152.nii.gz' }, { url: '/cache/aal.nii.gz' }])
+    // AAL label table (index → name), same file the Figure tab uses.
+    const txt = await (await fetch('/labels/aal.txt')).text()
+    FS.labels = txt.split('\n').map(l => l.trim()).filter(Boolean).map(l => {
+      const p = l.split(/\s+/); return { index: parseInt(p[0]), name: p[1] }
+    }).filter(r => !isNaN(r.index) && r.name)
+    fmriBuildLabelToCol()
+    FS.ready = true
+    msgEl.style.display = 'none'
+    fmriUpdateSlices()
+  } catch (e) {
+    console.error('fMRI slice strip failed', e)
+    FS.failed = true
+    msgEl.style.display = 'flex'
+    msgEl.textContent = 'Triple-slice view unavailable (NiiVue could not load). The 3-D view still works.'
+  }
+}
+
+// ── Render loop (only runs while the fMRI tab is visible) ──
+let fmriAnimRunning = false
+function fmriStartAnim() {
+  if (fmriAnimRunning) return
+  fmriAnimRunning = true; F.need = true; F.lastNow = performance.now()
+  requestAnimationFrame(fmriAnimate)
+}
+function fmriAnimate() {
+  if (document.getElementById('view-fmri').hidden) { fmriAnimRunning = false; return }
+  requestAnimationFrame(fmriAnimate)
+  const now = performance.now(), dt = (now - F.lastNow) / 1000; F.lastNow = now
+  if (F.playing && F.T > 0) {
+    F.t += dt * F.speed
+    if (F.t >= F.T) { if (F.loop) F.t = F.t % F.T; else { F.t = F.T - 1; F.playing = false; fmriPlayLabel() } }
+    const idx = Math.floor(F.t) % Math.max(1, F.T)
+    if (idx !== F.idx) {
+      fmriRecolor(idx); document.getElementById('fmScrub').value = idx; fmriUpdateTime(); fmriDrawPlot()
+    }
+  }
+  if (F.need) { F.renderer.render(F.scene, F.camera); F.need = false }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  COLLECTION PANEL  — floating, cross-tab gallery of captured brain views
+// ═══════════════════════════════════════════════════════════════════════
+// Each tab renders to its own WebGL canvas with no preserveDrawingBuffer, so we
+// must redraw synchronously immediately before toDataURL or the buffer reads blank.
+// Mesh-quality selectors (Explore + fMRI stay in sync via the shared setter)
+;['exMeshQuality', 'fmMeshQuality'].forEach(id => {
+  const el = document.getElementById(id)
+  if (el) el.onchange = () => setMeshQuality(el.value)
+})
+
+window.__captureExplore = function () {
+  if (!renderer || !scene || !camera) return null
+  renderer.render(scene, camera)
+  const url = document.getElementById('glExplore').toDataURL('image/png')
+  if (!url || url.length < 200) return null
+  return { url, tab: 'explore', label: 'Advanced view' }
+}
+window.__captureFmri = function () {
+  if (!F.renderer) return null
+  F.renderer.render(F.scene, F.camera)
+  const url = document.getElementById('glFmri').toDataURL('image/png')
+  if (!url || url.length < 200) return null
+  const tlabel = (F.T > 0) ? ' · t=' + (F.idx || 0) : ''
+  return { url, tab: 'fmri', label: 'fMRI' + tlabel }
+}
+
+const VP = (() => {
+  const items = []                       // { id, url, tab, label }
+  const TAB_NAMES = { figure: 'Figure', explore: 'Advanced', fmri: 'fMRI' }
+  let dragId = null, statusTimer = null
+
+  const $ = id => document.getElementById(id)
+  const els = {
+    panel: $('viewPanel'), header: $('vpHeader'), collapse: $('vpCollapse'),
+    list: $('vpList'), empty: $('vpEmpty'), count: $('vpCount'),
+    add: $('vpAdd'), save: $('vpSave'), clear: $('vpClear'),
+    cols: $('vpCols'), labels: $('vpLabels'), status: $('vpStatus'),
+  }
+
+  function status(msg, kind = '') {
+    els.status.textContent = msg
+    els.status.className = 'vp-status ' + kind
+    clearTimeout(statusTimer)
+    if (msg) statusTimer = setTimeout(() => { els.status.textContent = ''; els.status.className = 'vp-status' }, 3000)
+  }
+
+  function activeTab() {
+    const b = document.querySelector('.tab-btn.active')
+    return b ? b.dataset.tab : 'figure'
+  }
+
+  function capture() {
+    const tab = activeTab()
+    const fn = { figure: window.__captureFigure, explore: window.__captureExplore, fmri: window.__captureFmri }[tab]
+    if (!fn) { status('This tab isn’t ready yet', 'err'); return }
+    let shot
+    try { shot = fn() } catch (e) { console.error(e); shot = null }
+    if (!shot || !shot.url) { status('Capture failed — let the view finish loading', 'err'); return }
+    items.push({ id: 'v' + Date.now() + Math.random().toString(36).slice(2, 6), ...shot })
+    render()
+    status('Added ' + (TAB_NAMES[tab] || tab) + ' view', 'ok')
+    // keep newest in view
+    els.list.lastElementChild && els.list.lastElementChild.scrollIntoView({ block: 'nearest' })
+  }
+
+  function removeItem(id) {
+    const i = items.findIndex(x => x.id === id)
+    if (i >= 0) { items.splice(i, 1); render() }
+  }
+
+  function render() {
+    els.count.textContent = '(' + items.length + ')'
+    els.empty.style.display = items.length ? 'none' : ''
+    els.save.disabled = els.clear.disabled = items.length === 0
+    els.list.innerHTML = ''
+    items.forEach(it => els.list.appendChild(itemEl(it)))
+  }
+
+  function itemEl(it) {
+    const row = document.createElement('div')
+    row.className = 'vp-item'; row.dataset.id = it.id; row.draggable = true
+
+    const img = document.createElement('img')
+    img.className = 'vp-thumb'; img.src = it.url; img.alt = it.label; img.draggable = false
+
+    const info = document.createElement('div'); info.className = 'vp-info'
+    const badge = document.createElement('span'); badge.className = 'vp-badge'
+    badge.textContent = TAB_NAMES[it.tab] || it.tab
+    const cap = document.createElement('div')
+    cap.className = 'vp-cap'; cap.contentEditable = 'true'; cap.spellcheck = false
+    cap.textContent = it.label; cap.title = 'Click to rename'
+    cap.addEventListener('input', () => { it.label = cap.textContent.trim() || (TAB_NAMES[it.tab] || it.tab) })
+    cap.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); cap.blur() } })
+    cap.addEventListener('mousedown', e => e.stopPropagation())  // don't start a drag while editing
+    const sub = document.createElement('div'); sub.className = 'vp-sub'
+    info.append(badge, cap, sub)
+
+    const rm = document.createElement('button')
+    rm.className = 'vp-remove'; rm.textContent = '×'; rm.title = 'Remove'
+    rm.onclick = () => removeItem(it.id)
+
+    row.append(img, info, rm)
+
+    // ── drag to reorder ──
+    row.addEventListener('dragstart', e => {
+      dragId = it.id; row.classList.add('dragging')
+      e.dataTransfer.effectAllowed = 'move'
+    })
+    row.addEventListener('dragend', () => {
+      dragId = null; row.classList.remove('dragging')
+      els.list.querySelectorAll('.drag-over').forEach(n => n.classList.remove('drag-over'))
+    })
+    row.addEventListener('dragover', e => {
+      e.preventDefault()
+      if (dragId && dragId !== it.id) row.classList.add('drag-over')
+    })
+    row.addEventListener('dragleave', () => row.classList.remove('drag-over'))
+    row.addEventListener('drop', e => {
+      e.preventDefault(); row.classList.remove('drag-over')
+      if (!dragId || dragId === it.id) return
+      const from = items.findIndex(x => x.id === dragId)
+      const to = items.findIndex(x => x.id === it.id)
+      if (from < 0 || to < 0) return
+      items.splice(to, 0, items.splice(from, 1)[0])
+      render()
+    })
+    return row
+  }
+
+  // ── Compose all captured views into one grid PNG at full source resolution ──
+  function loadImg(src) {
+    return new Promise((res, rej) => {
+      const im = new Image()
+      im.onload = () => res(im); im.onerror = rej; im.src = src
+    })
+  }
+
+  async function save() {
+    if (!items.length) return
+    status('Building panel…')
+    let imgs
+    try { imgs = await Promise.all(items.map(it => loadImg(it.url))) }
+    catch (e) { console.error(e); status('Could not read images', 'err'); return }
+
+    const n = imgs.length
+    let cols = els.cols.value === 'auto' ? Math.ceil(Math.sqrt(n)) : parseInt(els.cols.value, 10)
+    cols = Math.max(1, Math.min(cols, n))
+    const rows = Math.ceil(n / cols)
+
+    // Cell sized to the largest capture so nothing is upscaled (capped for memory).
+    const CAP = 1600
+    const cellW = Math.min(CAP, Math.max(...imgs.map(im => im.naturalWidth || 800)))
+    const cellH = Math.min(CAP, Math.max(...imgs.map(im => im.naturalHeight || 600)))
+    const withLabels = els.labels.checked
+    const gap = Math.round(cellW * 0.018)
+    const capH = withLabels ? Math.round(cellW * 0.052) : 0
+    const fontPx = Math.round(cellW * 0.034)
+    const margin = gap
+
+    let W = margin * 2 + cols * cellW + (cols - 1) * gap
+    let H = margin * 2 + rows * (cellH + capH) + (rows - 1) * gap
+
+    // Clamp very large panels so the browser doesn't refuse the canvas.
+    const MAXDIM = 8000, scale = Math.min(1, MAXDIM / Math.max(W, H))
+
+    const cv = document.createElement('canvas')
+    cv.width = Math.round(W * scale); cv.height = Math.round(H * scale)
+    const ctx = cv.getContext('2d')
+    ctx.scale(scale, scale)
+    ctx.fillStyle = '#0d1117'; ctx.fillRect(0, 0, W, H)
+    ctx.imageSmoothingQuality = 'high'
+
+    imgs.forEach((im, i) => {
+      const c = i % cols, r = Math.floor(i / cols)
+      const x = margin + c * (cellW + gap)
+      const y = margin + r * (cellH + capH + gap)
+      ctx.fillStyle = '#000'; ctx.fillRect(x, y, cellW, cellH)
+      // contain-fit, centered
+      const s = Math.min(cellW / im.naturalWidth, cellH / im.naturalHeight)
+      const dw = im.naturalWidth * s, dh = im.naturalHeight * s
+      ctx.drawImage(im, x + (cellW - dw) / 2, y + (cellH - dh) / 2, dw, dh)
+      if (withLabels) {
+        ctx.fillStyle = '#0d1117'; ctx.fillRect(x, y + cellH, cellW, capH)
+        ctx.fillStyle = '#c9d1d9'; ctx.font = `600 ${fontPx}px system-ui, sans-serif`
+        ctx.textBaseline = 'middle'; ctx.textAlign = 'center'
+        let txt = items[i].label || ''
+        const max = cellW - gap * 2
+        while (txt.length > 4 && ctx.measureText(txt).width > max) txt = txt.slice(0, -2)
+        if (txt !== (items[i].label || '')) txt = txt.replace(/…?$/, '…')
+        ctx.fillText(txt, x + cellW / 2, y + cellH + capH / 2)
+      }
+    })
+
+    const a = document.createElement('a')
+    a.href = cv.toDataURL('image/png')
+    a.download = `brain_panel_${cols}x${rows}_${Date.now()}.png`
+    a.click()
+    status('Saved ' + cols + '×' + rows + ' panel', 'ok')
+  }
+
+  // ── Wire up controls ──
+  els.add.onclick = capture
+  els.save.onclick = save
+  els.clear.onclick = () => { if (items.length && confirm('Clear all captured views?')) { items.length = 0; render() } }
+  els.collapse.onclick = () => {
+    const c = els.panel.classList.toggle('collapsed')
+    els.collapse.textContent = c ? '▸' : '▾'
+  }
+
+  // ── Drag the panel itself by its header ──
+  ;(() => {
+    let down = false, ox = 0, oy = 0
+    els.header.addEventListener('mousedown', e => {
+      if (e.target.closest('.vp-collapse')) return
+      down = true
+      const r = els.panel.getBoundingClientRect()
+      ox = e.clientX - r.left; oy = e.clientY - r.top
+      els.panel.style.right = 'auto'
+      document.body.style.userSelect = 'none'
+    })
+    window.addEventListener('mousemove', e => {
+      if (!down) return
+      const w = els.panel.offsetWidth, h = els.panel.offsetHeight
+      let x = Math.max(4, Math.min(window.innerWidth - w - 4, e.clientX - ox))
+      let y = Math.max(4, Math.min(window.innerHeight - h - 4, e.clientY - oy))
+      els.panel.style.left = x + 'px'; els.panel.style.top = y + 'px'
+    })
+    window.addEventListener('mouseup', () => { down = false; document.body.style.userSelect = '' })
+  })()
+
+  render()
+  return { capture }
+})()
 </script>
 </body>
 </html>
