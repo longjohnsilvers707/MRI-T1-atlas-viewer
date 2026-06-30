@@ -26,9 +26,10 @@ backend round out this release (see the [changelog](#changelog)).
 
 * Python 3.8 or newer (any platform — Windows / macOS / Linux)
 * A modern browser with WebGL2 (Chrome, Edge, Firefox, Safari)
-* Internet on first run — the app fetches NiiVue / Three.js from a public CDN, and
-  the subject-T1 segmentation additionally downloads TensorFlow.js and the
-  brainchop model on first use (both cached by the browser afterward)
+* No internet required — NiiVue, Three.js, TensorFlow.js, and the brainchop
+  segmentation model are vendored locally under `vendor/` and served by the app
+  (public CDNs are used only as a fallback if a local copy is missing). The
+  MNI152 + AAL NIfTI atlas files are still downloaded into `cache/` on first run
 
 No `pip install`, no Node, no build step.
 
@@ -64,6 +65,99 @@ workflow:
 
 ---
 
+## Command-line imaging (`atlas_cli.py`)
+
+Make brain images straight from the terminal — no browser, no web session.
+`atlas_cli.py` renders AAL3 regions as 3-D PNGs or a 4-panel publication figure
+(axial + sagittal + coronal slices + a 3-D render), using the same mesh/slice
+rendering as the figure script.
+
+### Install (one time)
+
+The CLI needs a few scientific Python packages (the web app itself does **not**):
+
+```
+pip install numpy matplotlib nibabel
+```
+
+or, to keep them out of your system Python, in a project venv:
+
+```
+python -m venv .venv
+.venv/bin/pip install numpy matplotlib nibabel      # Windows: .venv\Scripts\pip
+```
+
+`atlas_cli.py list` works with the standard library alone; `render` is the part
+that needs the packages above and prints this install line if they're missing.
+
+### List what you can render
+
+```
+python atlas_cli.py list                 # all 160 AAL3 regions (+ lobe/network/hemi)
+python atlas_cli.py list --lobes         # available lobes
+python atlas_cli.py list --networks      # available functional networks
+python atlas_cli.py list --filter Occip  # filter by substring
+```
+
+Region names follow the mesh files: `Precentral_L`, `Occipital_Sup_R`, …. A name
+**without** a hemisphere suffix (`Occipital_Sup`) matches **both** sides.
+
+### Render
+
+```
+# A few regions, custom colours, one 3-D oblique view
+python atlas_cli.py render \
+  --regions Precentral_L,Occipital_Sup \
+  --color Precentral_L=#e07b39 \
+  --view oblique -o motor.png
+
+# Whole-lobe selection, left hemisphere, 4-panel publication figure
+python atlas_cli.py render --lobe Frontal --hemi L --figure -o frontal_L.png
+
+# By functional network
+python atlas_cli.py render --network Visual --figure -o visual.png
+```
+
+Useful flags: `--view right_lateral,left_lateral,posterior,superior,oblique`
+(ignored with `--figure`), `--figure` (4-panel), `--slice-x/-y/-z N` (figure
+slice planes; default auto), `--bg white|black|#hex`, `--no-context` (drop the
+faint glass brain), `--dpi 300`, `--title "..."`. The 3-D meshes are **AAL3-only**;
+slices come from `cache/aal.nii.gz`.
+
+### Favorites — save image patterns you like
+
+```
+python atlas_cli.py favorites save motor --regions Precentral_L,Precentral_R --color Precentral_L=#e07b39
+python atlas_cli.py favorites list
+python atlas_cli.py favorites show motor         # prints the preset + equivalent command
+python atlas_cli.py favorites render motor -o motor.png
+python atlas_cli.py favorites delete motor
+```
+
+Favorites live in `~/.atlas-viewer/favorites.json`.
+
+### Make a pattern in the browser → get a command
+
+You don't have to compose the flags by hand. Build the look you want in the web
+**Figure** tab (pick regions, recolour, set slice planes), then click
+**Export CLI command**. The modal gives you:
+
+* a ready-to-paste `python atlas_cli.py render …` command,
+* the equivalent **preset JSON** (Copy JSON / Download preset).
+
+Run the command to regenerate the figure offline, or save the preset and feed it
+back in:
+
+```
+python atlas_cli.py render --preset my_figure.json -o my_figure.png
+python atlas_cli.py favorites import my_figure.json --name my_figure
+```
+
+(The 3-D meshes are AAL3-only, so exporting from the JHU/AICHA/CIT168 atlases
+flags a note; the slice panels still render.)
+
+---
+
 ## Gray-matter volume
 
 The **Gray-matter volume** panel (bottom of the Figure sidebar) gives two ways to
@@ -80,7 +174,7 @@ get GM volumes — both run entirely in the browser, no FSL install and no uploa
   **Show atlas** toggle to adjust or hide the shading, and pick an atlas to return
   to the template view. It's a *rough* estimate from a deliberately small, fast model —
   not FSL-FAST quality — but needs no native tools. TensorFlow.js and the model are
-  fetched from a CDN on first use and cached by the browser.
+  served locally from `vendor/` (no CDN, works offline).
 
 ## Explore tab (3-D)
 
@@ -116,7 +210,16 @@ python build_brain_bundle.py
 This normalizes the meshes, computes per-region centroids, and tags each region
 with lobe / hemisphere / functional network. **Note:** the functional-network
 assignment (AAL3 → Yeo-style) is *approximate* and curated by region name — edit
-`NETWORK_MAP` in `build_brain_bundle.py` to refine it.
+the `REGION_TAXONOMY` table in `build_brain_bundle.py` to refine it (the build
+fails if any region is left unmapped).
+
+> **`meshes/brain_bundle.json` is the only mesh asset the viewer loads at
+> runtime** (one ~6.8 MB `fetch`). The 160 `meshes/*.obj` files are *build
+> inputs*, not runtime assets — they're generated by `aal3_to_obj.py`, baked into
+> the bundle by `build_brain_bundle.py`, and read directly by the figure script
+> `render_dexterity_brain_figures.py`. The browser never loads them, so they don't
+> need to be served to use the app; keep them only if you intend to regenerate the
+> bundle or render figures.
 
 ## fMRI tab (time-course playback)
 
@@ -226,6 +329,100 @@ its atlas catalog informed which atlases this viewer ships labels for.
 ---
 
 ## Changelog
+
+### 2026-06-30
+
+A security- and robustness-hardening pass driven by a code audit (`issues.md`),
+covering the server, the OBJ/bundle build, and the in-browser app. No user-facing
+workflow changes; the app behaves the same but with the supply-chain, XSS, and
+resource-leak risks closed. (The Explore-tab 3-D engine is **Three.js**, used
+throughout this changelog.)
+
+**Supply chain / offline (libraries now vendored locally)**
+
+* Third-party libraries are no longer fetched from a public CDN at runtime. The
+  exact pinned builds — NiiVue 0.69.0, Three.js 0.160.0, TensorFlow.js 4.22.0
+  (core + WASM backend), and the brainchop `model5_gw_ae` model — are vendored
+  under `vendor/` and served locally from `/vendor/`. The app now works offline
+  and trusts no CDN code; the public CDNs remain only as a last-resort fallback.
+* The brainchop model is pinned to an **immutable commit SHA**
+  (`4c87885…`) instead of the mutable `@master` branch, so a push upstream can no
+  longer silently swap the model/weights executed in your browser.
+* `scripts/fetch_vendor.sh` reproduces `vendor/` from scratch; `vendor/SHA256SUMS`
+  is an integrity manifest (`cd vendor && sha256sum -c SHA256SUMS`);
+  `vendor/README.md` documents the pinned versions.
+
+**Browser security (CSP + XSS)**
+
+* Added a strict **Content-Security-Policy**: scripts run only from `'self'` (the
+  vendored modules) plus the three first-party inline blocks allow-listed by
+  SHA-256 hash — there is **no `unsafe-inline` for scripts**, so an injected
+  inline script or `on*=` handler is refused. `object-src 'none'`, `base-uri
+  'self'`. (`'unsafe-eval'` / `'wasm-unsafe-eval'` / `blob:` are retained because
+  TensorFlow.js needs them.) `scripts/csp_hashes.py` recomputes/validates the
+  hashes after any edit to an inline block.
+* Replaced the region-list inline `on*=` handler strings (and the `window._tv` /
+  `window._tc` shims) with delegated event listeners, and routed interpolated
+  region names through a single `escapeHtml()` helper — including the uploaded
+  T1 file name, the one genuinely user-controlled string reaching the UI.
+
+**GPU resource lifecycle**
+
+* Added `disposeObject3D()` (frees geometry, materials, and their textures) and
+  routed the tract and connection-arc rebuilds through it — arc materials
+  previously leaked on every rebuild, growing GPU memory over a long session.
+
+**Error handling**
+
+* The full-screen fatal-error overlay is now reserved for genuine *startup*
+  failures. After the app is up, a stray unhandled promise rejection goes to the
+  diagnostics log and a toast instead of blanking the working UI.
+
+**Server (`server.py`)**
+
+* Dropped the blanket `Access-Control-Allow-Origin: *` and added a `Host`-header
+  allow-list, so other web pages / DNS-rebinding can no longer read local files
+  cross-origin.
+* Path handling for `/cache/` and `/labels/` now resolves the real path and
+  rejects traversal (e.g. `/cache/../server.py`); project source, `.git`,
+  `.claude`, and dotfiles are no longer servable.
+* Atlas downloads are streamed to a temp file, **SHA-256-verified**, and only
+  then moved into place; an existing cached file failing its checksum is
+  re-downloaded. The server is now threaded (`ThreadingHTTPServer`) so concurrent
+  range requests don't serialize.
+
+**Build / data correctness + tests**
+
+* `obj_utils.read_obj` now handles negative (relative) OBJ indices, bounds-checks
+  every face index, and raises clear `file:line` errors on malformed input.
+* `build_brain_bundle.py` replaces the substring-matched lobe/network rules with
+  one explicit `REGION_TAXONOMY` table (order-independent) and **fails the build**
+  if any region is unmapped; it also logs the parsed index set and flags the
+  documented AAL3 gaps. Bundle output is byte-identical to before.
+* Added the first test harness in the repo: `tests/test_obj_utils.py`
+  (`python -m pytest`; dev deps in `requirements-dev.txt`).
+
+### 2026-06-29
+
+**Command-line imaging (`atlas_cli.py`, new)** — render brain images from the
+terminal without a web session:
+
+* `render` selected AAL3 regions (by name, `--lobe`, `--network`, `--hemi`) as
+  3-D view PNGs or a `--figure` 4-panel publication layout, with per-region
+  `--color`, slice planes, background, DPI, and title.
+* `list` for region/lobe/network discovery (standard-library only).
+* `favorites` save/list/show/render/delete/import — named patterns stored in
+  `~/.atlas-viewer/favorites.json`.
+* `--preset <file.json>` renders from an exported preset.
+* New **Export CLI command** button in the Figure tab: build a pattern in the
+  browser, then copy the equivalent `atlas_cli.py` command or download the preset
+  JSON to regenerate it offline (or `favorites import` it).
+
+**Refactor / de-duplication** — generic mesh/slice rendering primitives extracted
+into a shared `brain_render.py` (used by both `atlas_cli.py` and
+`render_dexterity_brain_figures.py`, which no longer carries its own copies);
+the CLI reuses the lobe/network/hemisphere taxonomy from `build_brain_bundle.py`
+rather than re-curating it.
 
 ### 2026-06-23
 
