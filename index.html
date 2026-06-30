@@ -1005,6 +1005,54 @@ canvas#fmriPlot { width: 100%; height: 78px; display: block; cursor: pointer; }
 .vp-status { font-size: 10px; color: var(--dim); min-height: 13px; text-align: center; }
 .vp-status.err { color: var(--danger); }
 .vp-status.ok { color: var(--accent); }
+/* ── CLI Export panel + modal ───────────────────────── */
+#exportCliPanel {
+  padding: 8px 14px 10px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+  background: var(--bg);
+}
+#exportCliPanel button { width: 100%; }
+
+#cliModal {
+  position: fixed; inset: 0; z-index: 300;
+  background: rgba(13,17,23,0.82);
+  display: none; align-items: center; justify-content: center;
+  padding: 24px;
+}
+#cliModal.active { display: flex; }
+.cli-card {
+  background: #161b22; border: 1px solid var(--border); border-radius: 8px;
+  width: min(620px, 96vw); max-height: 90vh;
+  display: flex; flex-direction: column; overflow: hidden;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.55);
+}
+.cli-head {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 12px 16px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.cli-head h2 { font-size: 14px; font-weight: 600; margin: 0; color: var(--text); }
+.cli-head button {
+  background: none; border: none; color: var(--dim); font-size: 20px;
+  line-height: 1; cursor: pointer; padding: 0 4px; width: auto;
+}
+.cli-head button:hover { color: var(--text); background: none; }
+.cli-body { padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; }
+.cli-section-lbl {
+  font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.8px; color: var(--dim); margin-top: 4px;
+}
+.cli-warn {
+  font-size: 11px; color: #e3b341;
+  background: rgba(227,179,65,0.1); border: 1px solid rgba(227,179,65,0.3);
+  border-radius: 4px; padding: 6px 8px; line-height: 1.4;
+}
+#cliCmdText, #cliJsonText {
+  width: 100%; background: #0d1117; border: 1px solid var(--border);
+  border-radius: 4px; color: var(--text);
+  font-family: 'Cascadia Code', 'Consolas', 'Monaco', monospace;
+  font-size: 11px; padding: 8px; resize: vertical; line-height: 1.5;
+}
 </style>
 </head>
 <body>
@@ -1189,6 +1237,15 @@ canvas#fmriPlot { width: 100%; height: 78px; display: block; cursor: pointer; }
 
     <button id="btnDiag" style="margin-top:8px;">Diagnostics / error log</button>
   </div>
+
+  <!-- Export CLI command -->
+  <div id="exportCliPanel">
+    <div class="label-xs">Export</div>
+    <button id="btnExportCli">Export CLI command</button>
+    <div id="cliAtlasNote" style="display:none;font-size:10px;color:#e3b341;margin-top:5px;line-height:1.4;">
+      3D mesh rendering requires AAL/AAL3 atlas. Slice panels export correctly for any atlas.
+    </div>
+  </div>
 </aside>
 
 <!-- ═══════════════ VIEWER ═══════════════ -->
@@ -1227,6 +1284,31 @@ canvas#fmriPlot { width: 100%; height: 78px; display: block; cursor: pointer; }
     </div>
   </div>
 </div>
+<!-- ═══════════════ CLI EXPORT MODAL ═══════════════ -->
+<div id="cliModal">
+  <div class="cli-card">
+    <div class="cli-head">
+      <h2>Export CLI command</h2>
+      <button id="btnCliClose" title="Close">&times;</button>
+    </div>
+    <div class="cli-body">
+      <div id="cliWarnBanner" class="cli-warn" style="display:none;">
+        Note: 3D mesh rendering (figure 3D panel) requires AAL/AAL3 atlas.
+        Slice panels still export correctly for any atlas.
+      </div>
+      <div class="cli-section-lbl">Command</div>
+      <textarea id="cliCmdText" readonly rows="3"></textarea>
+      <div class="btn-row">
+        <button id="btnCliCopyCmd">Copy command</button>
+        <button id="btnCliCopyJson">Copy JSON</button>
+        <button id="btnCliDownload">Download .json</button>
+      </div>
+      <div class="cli-section-lbl">Preset JSON</div>
+      <textarea id="cliJsonText" readonly rows="16"></textarea>
+    </div>
+  </div>
+</div>
+
 </div><!-- #view-figure -->
 
 <!-- ═══════════════ EXPLORE VIEW ═══════════════ -->
@@ -1627,6 +1709,16 @@ function showFatalError(msg) {
     lm.style.whiteSpace='pre-wrap'
     lm.innerHTML = '<b>Error</b>\n\n' + String(msg).replace(/</g, '&lt;')
   }
+}
+
+// ── HTML-escape helper for values interpolated into innerHTML (issues.md A4).
+//    Defined early + on window so every script block can reach it. Use this on
+//    any user-controllable string (uploaded file names, etc.) before it reaches
+//    an innerHTML template.
+window.escapeHtml = function (s) {
+  return String(s).replace(/[&<>"']/g, c => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+  ))
 }
 
 // ── Diagnostics / error log (defined early so it captures startup errors too) ──
@@ -2370,7 +2462,9 @@ function renderVolTableBody() {
 
 // ── Part 2: subject GM segmentation (brainchop fast model) ─────────────
 // model5_gw_ae: 256³×1 in → 3 classes out (0 bg / 1 white / 2 gray).
-const BC_MODEL_BASE = 'https://cdn.jsdelivr.net/gh/neuroneural/brainchop@master/public/models/model5_gw_ae'
+// Pinned to an immutable commit SHA, not @master: a mutable branch means any
+// push to brainchop could silently swap the model/weights run here (issues.md A3).
+const BC_MODEL_BASE = 'https://cdn.jsdelivr.net/gh/neuroneural/brainchop@4c87885f3a2a8835e260d521dcec922b58d91d41/public/models/model5_gw_ae'
 const TFJS_VER = '4.22.0'
 let _tf = null, _bcModel = null, _segBusy = false
 let _segBackend = 'n/a'   // which TF.js backend inference actually ran on
@@ -2583,7 +2677,7 @@ function showSegResults(counts, fname) {
 
   document.getElementById('vmContent').innerHTML = `
     <div class="vm-sub">
-      ${fname} · brainchop fast model (model5_gw_ae) · 1 mm³ voxels.
+      ${escapeHtml(fname)} · brainchop fast model (model5_gw_ae) · 1 mm³ voxels.
       <b>Rough estimate</b> from a quick, lower-accuracy model — not FSL-FAST quality.
       Nothing was uploaded; this ran locally on your GPU. The classified tissue is
       shaded on your T1 behind this dialog — adjust with the <b>Atlas opacity</b>
@@ -2662,6 +2756,107 @@ function showDiagnostics() {
     report.replace(/</g, '&lt;') + '</pre></div>'
   setVmCsv(() => ({ filename: `atlas_diagnostics_${Date.now()}.txt`, text: buildDiagnosticsReport() }), 'Save log')
   openVolModal('Diagnostics')
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  CLI EXPORT  — §4 of atlas_cli_spec: builds preset JSON + command string
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * Build a preset object (spec §2) from the current Figure-tab state.
+ * Reads: regions[], currentKey, slX/slY/slZ sliders, nv volumes.
+ * @returns {Object} preset
+ */
+function buildFigurePreset() {
+  const isAal = currentKey === 'aal' || currentKey === 'aal3'
+
+  // Slice positions from MNI-mm sliders → voxel indices via the loaded atlas volume.
+  // Only non-centre (non-zero mm) axes are exported; centre → null (CLI auto-selects).
+  const mmX = parseInt(document.getElementById('slX').value, 10)
+  const mmY = parseInt(document.getElementById('slY').value, 10)
+  const mmZ = parseInt(document.getElementById('slZ').value, 10)
+
+  let sliceX = null, sliceY = null, sliceZ = null
+  if (nv && nv.volumes.length >= 2) {
+    const vol = nv.volumes[1]
+    if (typeof vol.mm2vox === 'function') {
+      const vox = vol.mm2vox([mmX, mmY, mmZ])
+      if (mmX !== 0) sliceX = Math.round(vox[0])
+      if (mmY !== 0) sliceY = Math.round(vox[1])
+      if (mmZ !== 0) sliceZ = Math.round(vox[2])
+    }
+  }
+
+  /** @type {Object} */
+  const preset = {
+    version:    1,
+    atlas:      currentKey,
+    regions:    regions
+      .filter(r => r.visible)
+      .map(r => ({ name: r.name, color: rgb2hex(r.color) })),
+    select:     { lobe: [], network: [], hemi: [] },
+    views:      ['oblique'],
+    figure:     true,
+    slices:     { x: sliceX, y: sliceY, z: sliceZ },
+    background: 'white',
+    context:    true,
+    dpi:        300,
+    title:      null,
+  }
+
+  if (!isAal) preset.meshWarning = true
+
+  return preset
+}
+
+/**
+ * Convert a preset (§2) to the equivalent `python atlas_cli.py render …` string.
+ * Format rules match the CLI's `preset_to_argv` (spec §4).
+ * @param {Object} preset
+ * @returns {string}
+ */
+function buildCliCommand(preset) {
+  const parts = ['python atlas_cli.py render']
+  parts.push(`--atlas ${preset.atlas}`)
+
+  if (preset.regions.length > 0) {
+    parts.push(`--regions ${preset.regions.map(r => r.name).join(',')}`)
+    for (const r of preset.regions) {
+      if (r.color) parts.push(`--color ${r.name}=${r.color}`)
+    }
+  }
+
+  // --figure flag (no value) for the 4-panel layout
+  parts.push('--figure')
+
+  // Slice flags only when position is non-null (i.e. slider was moved off centre)
+  if (preset.slices.x !== null) parts.push(`--slice-x ${preset.slices.x}`)
+  if (preset.slices.y !== null) parts.push(`--slice-y ${preset.slices.y}`)
+  if (preset.slices.z !== null) parts.push(`--slice-z ${preset.slices.z}`)
+
+  parts.push(`--dpi ${preset.dpi ?? 300}`)
+  parts.push('-o figure.png')
+
+  return parts.join(' ')
+}
+
+function openCliModal() {
+  const preset  = buildFigurePreset()
+  const cmd     = buildCliCommand(preset)
+  const jsonStr = JSON.stringify(preset, null, 2)
+
+  document.getElementById('cliCmdText').value  = cmd
+  document.getElementById('cliJsonText').value = jsonStr
+
+  const showWarn = !!preset.meshWarning
+  document.getElementById('cliWarnBanner').style.display  = showWarn ? '' : 'none'
+  document.getElementById('cliAtlasNote').style.display   = showWarn ? '' : 'none'
+
+  document.getElementById('cliModal').classList.add('active')
+}
+
+function closeCliModal() {
+  document.getElementById('cliModal').classList.remove('active')
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -2793,6 +2988,33 @@ async function init() {
   document.getElementById('btnDiag').onclick = () => showDiagnostics()
   document.getElementById('volModal').onclick = e => { if (e.target.id === 'volModal') closeVolModal() }
 
+  // ── CLI Export ───────────────────────────────────────────
+  document.getElementById('btnExportCli').addEventListener('click', openCliModal)
+  document.getElementById('btnCliClose').addEventListener('click', closeCliModal)
+  document.getElementById('cliModal').addEventListener('click', e => {
+    if (e.target.id === 'cliModal') closeCliModal()
+  })
+  document.getElementById('btnCliCopyCmd').addEventListener('click', () => {
+    navigator.clipboard.writeText(document.getElementById('cliCmdText').value)
+      .then(() => toast('Command copied'))
+      .catch(() => toast('Copy failed — select and copy manually', 'err'))
+  })
+  document.getElementById('btnCliCopyJson').addEventListener('click', () => {
+    navigator.clipboard.writeText(document.getElementById('cliJsonText').value)
+      .then(() => toast('JSON copied'))
+      .catch(() => toast('Copy failed — select and copy manually', 'err'))
+  })
+  document.getElementById('btnCliDownload').addEventListener('click', () => {
+    const json = document.getElementById('cliJsonText').value
+    const blob = new Blob([json], { type: 'application/json' })
+    const a    = document.createElement('a')
+    a.href     = URL.createObjectURL(blob)
+    a.download = `atlas_preset_${currentKey}_${Date.now()}.json`
+    a.click()
+    URL.revokeObjectURL(a.href)
+    toast('Preset downloaded')
+  })
+
   // ── Canvas events ────────────────────────────────────────
   const canvas = document.getElementById('gl1')
   canvas.addEventListener('mousemove', onMouseMove)
@@ -2846,7 +3068,7 @@ tabButtons.forEach(b => (b.onclick = () => switchTab(b.dataset.tab)))
 // siblings in a .collapse-body and toggle a .collapsed class on click. The
 // open/closed state is remembered per section in localStorage.
 function initCollapsibleSections() {
-  const SECTIONS = '.ex-section, .fm-section, #atlasSection, #slicePanel, #controlsPanel, #volumePanel, #regionPanel'
+  const SECTIONS = '.ex-section, .fm-section, #atlasSection, #slicePanel, #controlsPanel, #volumePanel, #regionPanel, #exportCliPanel'
   document.querySelectorAll(SECTIONS).forEach(sec => {
     if (sec.dataset.collapsibleInit) return
     // Only sections whose first real control is a bold label header become
@@ -3183,6 +3405,94 @@ function setMeshQuality(level) {
   if (typeof F !== 'undefined' && F) F.need = true
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+//  Shared Three.js engine helpers (used by BOTH the Explore and fMRI tabs)
+//  The two tabs hold their scene/camera/orb state differently (Explore uses
+//  module-scope globals, fMRI uses the `F` object), so these helpers take a
+//  small "context" of accessors + callbacks instead of touching state directly.
+// ═══════════════════════════════════════════════════════════════════════
+
+// Z-up custom orbit controls (no external dependency). `ctx` provides:
+//   getCamera()  → the THREE.PerspectiveCamera (read lazily; may be reassigned)
+//   orb          → { target, radius, theta, phi } state object (mutated in place)
+//   getTmp()     → a scratch THREE.Vector3 (for pan view-dir math; read lazily)
+//   onChange()   → called after any camera move (sets the tab's dirty flag)
+//   onHover(e)   → pointermove hover handler
+//   onClick(e)   → fired on a click (pointerup without significant drag)
+//   setInitOrb(o)→ stores the initial { radius, theta, phi } for reset
+// Returns { syncCam, attach } — syncCam re-derives camera position from orb;
+// attach(canvas) wires pointer/wheel listeners and seeds orb from the camera.
+function makeOrbitController(ctx) {
+  function syncCam() {
+    const cam = ctx.getCamera()
+    const { target, radius, theta, phi } = ctx.orb
+    cam.position.set(
+      target.x + radius * Math.sin(phi) * Math.cos(theta),
+      target.y + radius * Math.sin(phi) * Math.sin(theta),
+      target.z + radius * Math.cos(phi))
+    cam.lookAt(target)
+    ctx.onChange()
+  }
+  function attach(canvas) {
+    const cam = ctx.getCamera()
+    const orb = ctx.orb
+    const off = cam.position.clone().sub(orb.target)
+    orb.radius = off.length()
+    orb.theta = Math.atan2(off.y, off.x)
+    orb.phi = Math.acos(Math.min(1, Math.max(-1, off.z / orb.radius)))
+    ctx.setInitOrb({ radius: orb.radius, theta: orb.theta, phi: orb.phi })
+    syncCam()
+
+    let dragging = false, mode = 'rot', px = 0, py = 0, sx = 0, sy = 0
+    canvas.addEventListener('pointerdown', e => {
+      dragging = true; mode = (e.button === 2 || e.shiftKey) ? 'pan' : 'rot'
+      px = sx = e.clientX; py = sy = e.clientY; canvas.setPointerCapture(e.pointerId)
+    })
+    canvas.addEventListener('pointermove', e => {
+      ctx.onHover(e)
+      if (!dragging) return
+      const dx = e.clientX - px, dy = e.clientY - py; px = e.clientX; py = e.clientY
+      if (mode === 'rot') {
+        orb.theta -= dx * 0.006
+        orb.phi = Math.min(Math.PI - 0.05, Math.max(0.05, orb.phi - dy * 0.006))
+      } else {
+        const cam2 = ctx.getCamera()
+        const scale = orb.radius * 0.0016
+        const viewDir = ctx.getTmp().subVectors(orb.target, cam2.position).normalize()
+        const right = new THREE.Vector3().crossVectors(viewDir, cam2.up).normalize()
+        const up = new THREE.Vector3().crossVectors(right, viewDir).normalize()
+        orb.target.addScaledVector(right, -dx * scale).addScaledVector(up, dy * scale)
+      }
+      syncCam()
+    })
+    const end = e => {
+      if (dragging && Math.hypot(e.clientX - sx, e.clientY - sy) < 4) ctx.onClick(e)
+      dragging = false
+    }
+    canvas.addEventListener('pointerup', end)
+    canvas.addEventListener('pointercancel', () => (dragging = false))
+    canvas.addEventListener('contextmenu', e => e.preventDefault())
+    canvas.addEventListener('wheel', e => {
+      e.preventDefault()
+      orb.radius = Math.min(60, Math.max(2, orb.radius * (1 + Math.sign(e.deltaY) * 0.08)))
+      syncCam()
+    }, { passive: false })
+  }
+  return { syncCam, attach }
+}
+
+// Raycaster pick shared by both tabs. `meshes` is the candidate list (Explore
+// passes only visible regions; fMRI passes all brain children). Mutates the
+// supplied `pointer` vector and `raycaster`, exactly as the originals did.
+function raycastPick(renderer, raycaster, pointer, camera, meshes, e) {
+  const rect = renderer.domElement.getBoundingClientRect()
+  pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1
+  pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1
+  raycaster.setFromCamera(pointer, camera)
+  const hits = raycaster.intersectObjects(meshes, false)
+  return hits.length ? hits[0].object : null
+}
+
 function buildScene(bundle) {
   const canvas = document.getElementById('glExplore')
   renderer = new THREE.WebGLRenderer({ canvas, antialias: true })
@@ -3255,57 +3565,18 @@ function resize() {
 }
 
 // ───── Orbit controls (Z-up, custom — no extra dependency) ─────
-function syncCam() {
-  const { target, radius, theta, phi } = orb
-  camera.position.set(
-    target.x + radius * Math.sin(phi) * Math.cos(theta),
-    target.y + radius * Math.sin(phi) * Math.sin(theta),
-    target.z + radius * Math.cos(phi))
-  camera.lookAt(target)
-  needsRender = true
-}
-function initOrbit(canvas) {
-  const off = camera.position.clone().sub(orb.target)
-  orb.radius = off.length()
-  orb.theta = Math.atan2(off.y, off.x)
-  orb.phi = Math.acos(Math.min(1, Math.max(-1, off.z / orb.radius)))
-  INIT_ORB = { radius: orb.radius, theta: orb.theta, phi: orb.phi }
-  syncCam()
-
-  let dragging = false, mode = 'rot', px = 0, py = 0, sx = 0, sy = 0
-  canvas.addEventListener('pointerdown', e => {
-    dragging = true; mode = (e.button === 2 || e.shiftKey) ? 'pan' : 'rot'
-    px = sx = e.clientX; py = sy = e.clientY; canvas.setPointerCapture(e.pointerId)
-  })
-  canvas.addEventListener('pointermove', e => {
-    onHover(e)
-    if (!dragging) return
-    const dx = e.clientX - px, dy = e.clientY - py; px = e.clientX; py = e.clientY
-    if (mode === 'rot') {
-      orb.theta -= dx * 0.006
-      orb.phi = Math.min(Math.PI - 0.05, Math.max(0.05, orb.phi - dy * 0.006))
-    } else {
-      const scale = orb.radius * 0.0016
-      const viewDir = tmp.subVectors(orb.target, camera.position).normalize()
-      const right = new THREE.Vector3().crossVectors(viewDir, camera.up).normalize()
-      const up = new THREE.Vector3().crossVectors(right, viewDir).normalize()
-      orb.target.addScaledVector(right, -dx * scale).addScaledVector(up, dy * scale)
-    }
-    syncCam()
-  })
-  const end = e => {
-    if (dragging && Math.hypot(e.clientX - sx, e.clientY - sy) < 4) handleClick(e)
-    dragging = false
-  }
-  canvas.addEventListener('pointerup', end)
-  canvas.addEventListener('pointercancel', () => (dragging = false))
-  canvas.addEventListener('contextmenu', e => e.preventDefault())
-  canvas.addEventListener('wheel', e => {
-    e.preventDefault()
-    orb.radius = Math.min(60, Math.max(2, orb.radius * (1 + Math.sign(e.deltaY) * 0.08)))
-    syncCam()
-  }, { passive: false })
-}
+// Shared controller wired to the Explore tab's globals (see makeOrbitController).
+const exOrbit = makeOrbitController({
+  getCamera: () => camera,
+  orb,
+  getTmp: () => tmp,   // lazy: real `tmp` is created in buildScene
+  onChange: () => { needsRender = true },
+  onHover: e => onHover(e),
+  onClick: e => handleClick(e),
+  setInitOrb: o => { INIT_ORB = o },
+})
+function syncCam() { exOrbit.syncCam() }
+function initOrbit(canvas) { exOrbit.attach(canvas) }
 function resetView() {
   Object.assign(orb, INIT_ORB); orb.target.set(0, 0, 0); syncCam()
 }
@@ -3357,13 +3628,8 @@ function syncGizmo() {
 
 // ───── Picking / highlight ─────
 function pick(e) {
-  const rect = renderer.domElement.getBoundingClientRect()
-  pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1
-  pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1
-  raycaster.setFromCamera(pointer, camera)
   const vis = regions.filter(r => r.mesh.visible).map(r => r.mesh)
-  const hits = raycaster.intersectObjects(vis, false)
-  return hits.length ? hits[0].object : null
+  return raycastPick(renderer, raycaster, pointer, camera, vis, e)
 }
 function onHover(e) {
   const m = pick(e)
@@ -4240,55 +4506,18 @@ function fmriBuildScene(bundle) {
   fmriResize()
 }
 
-// ── Orbit (independent copy of the Explore Z-up controls) ──
-function fmriSyncCam() {
-  const { target, radius, theta, phi } = F.orb
-  F.camera.position.set(
-    target.x + radius * Math.sin(phi) * Math.cos(theta),
-    target.y + radius * Math.sin(phi) * Math.sin(theta),
-    target.z + radius * Math.cos(phi))
-  F.camera.lookAt(target); F.need = true
-}
-function fmriInitOrbit(canvas) {
-  const off = F.camera.position.clone().sub(F.orb.target)
-  F.orb.radius = off.length(); F.orb.theta = Math.atan2(off.y, off.x)
-  F.orb.phi = Math.acos(Math.min(1, Math.max(-1, off.z / F.orb.radius)))
-  F.initOrb = { radius: F.orb.radius, theta: F.orb.theta, phi: F.orb.phi }
-  fmriSyncCam()
-  let dragging = false, mode = 'rot', px = 0, py = 0, sx = 0, sy = 0
-  canvas.addEventListener('pointerdown', e => {
-    dragging = true; mode = (e.button === 2 || e.shiftKey) ? 'pan' : 'rot'
-    px = sx = e.clientX; py = sy = e.clientY; canvas.setPointerCapture(e.pointerId)
-  })
-  canvas.addEventListener('pointermove', e => {
-    fmriHover(e)
-    if (!dragging) return
-    const dx = e.clientX - px, dy = e.clientY - py; px = e.clientX; py = e.clientY
-    if (mode === 'rot') {
-      F.orb.theta -= dx * 0.006
-      F.orb.phi = Math.min(Math.PI - 0.05, Math.max(0.05, F.orb.phi - dy * 0.006))
-    } else {
-      const scale = F.orb.radius * 0.0016
-      const vd = F.tmp.subVectors(F.orb.target, F.camera.position).normalize()
-      const right = new THREE.Vector3().crossVectors(vd, F.camera.up).normalize()
-      const up = new THREE.Vector3().crossVectors(right, vd).normalize()
-      F.orb.target.addScaledVector(right, -dx * scale).addScaledVector(up, dy * scale)
-    }
-    fmriSyncCam()
-  })
-  const end = e => {
-    if (dragging && Math.hypot(e.clientX - sx, e.clientY - sy) < 4) fmriClick(e)
-    dragging = false
-  }
-  canvas.addEventListener('pointerup', end)
-  canvas.addEventListener('pointercancel', () => (dragging = false))
-  canvas.addEventListener('contextmenu', e => e.preventDefault())
-  canvas.addEventListener('wheel', e => {
-    e.preventDefault()
-    F.orb.radius = Math.min(60, Math.max(2, F.orb.radius * (1 + Math.sign(e.deltaY) * 0.08)))
-    fmriSyncCam()
-  }, { passive: false })
-}
+// ── Orbit (shared Z-up controls, wired to the `F` state object) ──
+const fmriOrbit = makeOrbitController({
+  getCamera: () => F.camera,
+  orb: F.orb,
+  getTmp: () => F.tmp,
+  onChange: () => { F.need = true },
+  onHover: e => fmriHover(e),
+  onClick: e => fmriClick(e),
+  setInitOrb: o => { F.initOrb = o },
+})
+function fmriSyncCam() { fmriOrbit.syncCam() }
+function fmriInitOrbit(canvas) { fmriOrbit.attach(canvas) }
 function fmriResetView() { Object.assign(F.orb, F.initOrb); F.orb.target.set(0, 0, 0); fmriSyncCam() }
 function fmriResize() {
   if (!F.renderer) return
@@ -4300,12 +4529,7 @@ function fmriResize() {
 
 // ── Picking ──
 function fmriPick(e) {
-  const rect = F.renderer.domElement.getBoundingClientRect()
-  F.pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1
-  F.pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1
-  F.raycaster.setFromCamera(F.pointer, F.camera)
-  const hits = F.raycaster.intersectObjects(F.brain.children, false)
-  return hits.length ? hits[0].object : null
+  return raycastPick(F.renderer, F.raycaster, F.pointer, F.camera, F.brain.children, e)
 }
 function fmriValue(idx, col) { return (F.act && idx >= 0) ? F.act[idx * F.N + col] : 0 }
 function fmriHover(e) {
