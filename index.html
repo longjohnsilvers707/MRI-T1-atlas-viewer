@@ -2,6 +2,28 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<!-- Content-Security-Policy (issues.md A4). script-src has NO 'unsafe-inline':
+     the app's three inline script blocks are allowed by SHA-256 hash, so any
+     injected inline script or event-handler attribute is refused. 'self' covers
+     the locally vendored modules (/vendor/); the public CDNs remain only for
+     the last-resort library fallback. 'unsafe-eval'/'wasm-unsafe-eval' + blob:
+     are required by TensorFlow.js (segmentation). If an inline script block
+     changes, run scripts/csp_hashes.py and update the three hashes below. -->
+<meta http-equiv="Content-Security-Policy" content="
+  default-src 'self';
+  script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval' blob:
+    https://unpkg.com https://cdn.jsdelivr.net
+    'sha256-s4Xk4cKOCv6jt1DHpK9zLceoUJS3mDTahWNNC96sG2k='
+    'sha256-77KSdALDynlFDES6LcaMdgHwOELBvgXu1YsUgUR+6Xc='
+    'sha256-OnjuzIe9Y6cZbD+9UwCocEPFttOGgkW11iUBB0K3m4k=';
+  worker-src 'self' blob:;
+  style-src 'self' 'unsafe-inline';
+  img-src 'self' data: blob:;
+  font-src 'self' data:;
+  connect-src 'self' https://unpkg.com https://cdn.jsdelivr.net https://raw.githubusercontent.com;
+  object-src 'none';
+  base-uri 'self';
+">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Brain Atlas Viewer</title>
 <style>
@@ -1736,14 +1758,26 @@ window.diag = function (level, ...args) {
   return entry
 }
 
+// Set true once init() resolves. Before that, an uncaught error means the app
+// never came up → the full-screen fatal overlay is appropriate. After that, a
+// stray rejection (e.g. an optional async path) must NOT nuke a working UI; it
+// goes to the diag ring buffer + a toast instead (issues.md E1).
+window.__appReady = false
+function reportRuntimeError(label, full) {
+  window.diag('error', label, full)
+  if (window.__appReady) {
+    const first = String(full).split('\n')[0]
+    if (typeof window.toast === 'function') window.toast(first + ' — see Diagnostics', 'err')
+  } else {
+    showFatalError(full)
+  }
+}
 window.addEventListener('error', e => {
-  window.diag('error', 'window.error:', e.message, (e.filename || '') + ':' + (e.lineno || ''))
-  showFatalError(e.message + '\n' + (e.filename || '') + ':' + (e.lineno || ''))
+  reportRuntimeError('window.error:', e.message + '\n' + (e.filename || '') + ':' + (e.lineno || ''))
 })
 window.addEventListener('unhandledrejection', e => {
   const r = e.reason
-  window.diag('error', 'unhandledrejection:', (r && r.stack) || (r && r.message) || r || 'unhandled rejection')
-  showFatalError((r && r.message) || r || 'unhandled rejection')
+  reportRuntimeError('unhandledrejection:', (r && r.stack) || (r && r.message) || r || 'unhandled rejection')
 })
 </script>
 
@@ -1752,7 +1786,10 @@ window.addEventListener('unhandledrejection', e => {
 //  IMPORT NIIVUE  (with CDN fallback)
 // ═══════════════════════════════════════════════════════════════════════
 async function importNiivue() {
+  // Local vendored copy first (no runtime CDN trust, works offline — A3/A5);
+  // public CDNs remain only as a last-resort fallback.
   const cdns = [
+    '/vendor/niivue/index.js',
     'https://unpkg.com/@niivue/niivue@0.69.0/dist/index.js',
     'https://cdn.jsdelivr.net/npm/@niivue/niivue@0.69.0/dist/index.js',
     'https://unpkg.com/@niivue/niivue@0.69.0/build/niivue/index.js',
@@ -1760,7 +1797,9 @@ async function importNiivue() {
   let lastErr
   for (const url of cdns) {
     try {
-      document.getElementById('loadingMsg').textContent = 'Loading NiiVue from CDN…'
+      const local = url.startsWith('/vendor/')
+      document.getElementById('loadingMsg').textContent =
+        local ? 'Loading NiiVue…' : 'Loading NiiVue from CDN…'
       const mod = await import(url)
       if (mod && mod.Niivue && mod.SHOW_RENDER && mod.NVImage) return mod
       lastErr = new Error('module missing Niivue / SHOW_RENDER exports')
@@ -1952,21 +1991,21 @@ function renderList() {
 
 function regionRow(r) {
   const hov = r.index === hoverIdx ? ' hovered' : ''
-  const hexColor = rgb2hex(r.color)
+  const hexColor = rgb2hex(r.color)           // controlled hex string
+  const name = escapeHtml(r.name)             // region name may come from uploaded data
   return `<div class="region-item${hov}" data-idx="${r.index}">
-    <input type="checkbox" ${r.visible ? 'checked' : ''}
-      onchange="_tv(${r.index},this.checked)">
+    <input type="checkbox" class="r-vis" ${r.visible ? 'checked' : ''}>
     <div class="swatch-wrap" style="background:${hexColor}">
-      <input type="color" value="${hexColor}"
-        oninput="_tc(${r.index},this.value)"
-        onchange="_tc(${r.index},this.value)">
+      <input type="color" class="r-col" value="${hexColor}">
     </div>
-    <span class="r-name ${r.visible ? '' : 'off'}" title="${r.name}">${r.name}</span>
+    <span class="r-name ${r.visible ? '' : 'off'}" title="${name}">${name}</span>
   </div>`
 }
 
-// Inline handler shims (needed because innerHTML event strings)
-window._tv = (idx, vis) => {
+// Region-list interactions via event delegation (replaces the old inline
+// on*= handler strings + window._tv/_tc shims, so a CSP without unsafe-inline
+// can hold — issues.md A4).
+function setRegionVisible(idx, vis) {
   const r = regions.find(r => r.index === idx)
   if (!r) return
   r.visible = vis
@@ -1977,11 +2016,11 @@ window._tv = (idx, vis) => {
     `${regions.filter(r => r.visible).length} / ${regions.length} visible`
 }
 
-// A colour drag fires oninput per pixel, and each applyColormap() re-uploads the
+// A colour drag fires 'input' per pixel, and each applyColormap() re-uploads the
 // LUT to the GPU (updateGLVolume). Update the colour state + swatch synchronously,
 // but coalesce the GPU upload to one per animation frame.
 let _tcRaf = 0
-window._tc = (idx, hex) => {
+function setRegionColor(idx, hex) {
   const r = regions.find(r => r.index === idx)
   if (!r) return
   r.color = hex2rgb(hex)
@@ -1989,6 +2028,22 @@ window._tc = (idx, hex) => {
   if (sw) sw.style.background = hex
   if (!_tcRaf) _tcRaf = requestAnimationFrame(() => { _tcRaf = 0; applyColormap() })
 }
+
+;(function wireRegionList() {
+  const listEl = document.getElementById('regionList')
+  if (!listEl) return
+  listEl.addEventListener('change', e => {
+    const item = e.target.closest('[data-idx]'); if (!item) return
+    const idx = +item.dataset.idx
+    if (e.target.classList.contains('r-vis')) setRegionVisible(idx, e.target.checked)
+    else if (e.target.classList.contains('r-col')) setRegionColor(idx, e.target.value)
+  })
+  listEl.addEventListener('input', e => {
+    if (!e.target.classList.contains('r-col')) return
+    const item = e.target.closest('[data-idx]'); if (!item) return
+    setRegionColor(+item.dataset.idx, e.target.value)
+  })
+})()
 
 // ═══════════════════════════════════════════════════════════════════════
 //  ATLAS LOADING
@@ -2455,16 +2510,17 @@ function renderVolTableBody() {
     return (typeof va === 'string' ? va.localeCompare(vb) : va - vb) * dir
   })
   document.getElementById('vmTableBody').innerHTML = rows.map(r => `
-    <tr><td>${r.name}</td><td>${r.vox.toLocaleString()}</td>
+    <tr><td>${escapeHtml(r.name)}</td><td>${r.vox.toLocaleString()}</td>
     <td>${r.mm3.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
     <td>${fmtVol(r.cm3)}</td></tr>`).join('')
 }
 
 // ── Part 2: subject GM segmentation (brainchop fast model) ─────────────
 // model5_gw_ae: 256³×1 in → 3 classes out (0 bg / 1 white / 2 gray).
-// Pinned to an immutable commit SHA, not @master: a mutable branch means any
-// push to brainchop could silently swap the model/weights run here (issues.md A3).
-const BC_MODEL_BASE = 'https://cdn.jsdelivr.net/gh/neuroneural/brainchop@4c87885f3a2a8835e260d521dcec922b58d91d41/public/models/model5_gw_ae'
+// Model + weights are vendored locally under /vendor/ (fetched at the pinned
+// commit 4c87885 by scripts/fetch_vendor.sh), so no brainchop/CDN code or data
+// is trusted at runtime (issues.md A3/A5).
+const BC_MODEL_BASE = '/vendor/brainchop/model5_gw_ae'
 const TFJS_VER = '4.22.0'
 let _tf = null, _bcModel = null, _segBusy = false
 let _segBackend = 'n/a'   // which TF.js backend inference actually ran on
@@ -2487,6 +2543,7 @@ async function loadTF() {
   diag('info', 'loadTF: loading TensorFlow.js core', TFJS_VER)
   if (!window.tf) {
     const urls = [
+      `/vendor/tfjs/tf.min.js`,   // local vendored copy first (A3/A5)
       `https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@${TFJS_VER}/dist/tf.min.js`,
       `https://unpkg.com/@tensorflow/tfjs@${TFJS_VER}/dist/tf.min.js`,
     ]
@@ -2507,10 +2564,11 @@ async function loadTF() {
   // Ensure the WASM backend is registered before we try to select it
   if (order.includes('wasm') && (!_tf.findBackend || !_tf.findBackend('wasm'))) {
     try {
-      await loadScript(`https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-wasm@${TFJS_VER}/dist/tf-backend-wasm.min.js`)
-      const base = `https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-wasm@${TFJS_VER}/dist/`
-      if (_tf.wasm && _tf.wasm.setWasmPaths) _tf.wasm.setWasmPaths(base)
-      else if (_tf.setWasmPaths) _tf.setWasmPaths(base)
+      const wasmBase = '/vendor/tfjs/'   // local vendored .wasm binaries (A3/A5)
+      try { await loadScript(wasmBase + 'tf-backend-wasm.min.js') }
+      catch (_) { await loadScript(`https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-wasm@${TFJS_VER}/dist/tf-backend-wasm.min.js`) }
+      if (_tf.wasm && _tf.wasm.setWasmPaths) _tf.wasm.setWasmPaths(wasmBase)
+      else if (_tf.setWasmPaths) _tf.setWasmPaths(wasmBase)
       diag('info', 'WASM backend script loaded')
     } catch (e) { diag('error', 'WASM backend load failed', e) }
   }
@@ -2695,7 +2753,7 @@ function showSegResults(counts, fname) {
       <thead><tr><th>Tissue</th><th>Voxels</th><th>cm³</th></tr></thead>
       <tbody>${rows.map(r =>
         `<tr><td><span style="display:inline-block;width:10px;height:10px;border-radius:2px;
-          margin-right:7px;vertical-align:middle;background:rgb(${segColorFor(r.name).join(',')})"></span>${r.name}</td>
+          margin-right:7px;vertical-align:middle;background:rgb(${segColorFor(r.name).join(',')})"></span>${escapeHtml(r.name)}</td>
         <td>${r.vox.toLocaleString()}</td><td>${fmtVol(cm3(r.vox))}</td></tr>`).join('')}
       </tbody>
       <tfoot><tr class="total-row">
@@ -3029,7 +3087,7 @@ async function init() {
   await loadAtlas('aal')
 }
 
-init().catch(err => {
+init().then(() => { window.__appReady = true }).catch(err => {
   console.error(err)
   document.getElementById('loadingMsg').textContent = `Failed: ${err.message}`
   document.getElementById('loadingOverlay').classList.add('active')
@@ -3047,6 +3105,15 @@ init().catch(err => {
 // ───── Tab switching (independent of Three.js load) ─────
 const tabButtons = [...document.querySelectorAll('.tab-btn')]
 let exploreInited = false, fmriInited = false
+// GPU-context lifecycle (issues.md B2): each tab's WebGL context is created
+// lazily exactly once (guarded by the *Inited flags below) and then reused —
+// switching tabs only pauses/resumes the dirty-flag-gated RAF loops, it never
+// allocates a new context, so repeated tab switching does not grow the live
+// context count. We deliberately do NOT dispose()/forceContextLoss() a tab's
+// renderer on hide: recreating NiiVue/three contexts mid-session risks
+// CONTEXT_LOST and state-restore bugs that outweigh reclaiming one idle
+// context. Steady GPU growth instead came from geometry/material rebuilds,
+// which are now freed via disposeObject3D (B3).
 function switchTab(name) {
   document.getElementById('view-figure').hidden  = name !== 'figure'
   document.getElementById('view-explore').hidden = name !== 'explore'
@@ -3288,6 +3355,7 @@ const TRACT_TYPE_COLORS = {
 // ───── Init ─────
 async function importThree() {
   const cdns = [
+    '/vendor/three/three.module.js',   // local vendored copy first (A3/A5)
     'https://unpkg.com/three@0.160.0/build/three.module.js',
     'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js',
   ]
@@ -3758,7 +3826,7 @@ function renderRegionList() {
       <div class="ri-top">
         <input type="checkbox" ${u.userVisible ? 'checked' : ''} data-vis="${r.meta.index}">
         <span class="g-swatch" style="background:${col}"></span>
-        <span class="r-name ${u.userVisible ? '' : 'off'}" title="${r.meta.displayName}">${r.meta.displayName}</span>
+        <span class="r-name ${u.userVisible ? '' : 'off'}" title="${escapeHtml(r.meta.displayName)}">${escapeHtml(r.meta.displayName)}</span>
       </div>
       <div class="ri-ctrls">
         <span class="ri-lbl" title="Explode">⤢</span>
@@ -3809,7 +3877,7 @@ function updateLearnPanel() {
     <div class="learn-section-lbl">What it is &amp; what it does</div>
     <p>${infoFor(meta)}</p>
     <div class="learn-section-lbl">Atlas reference</div>
-    <p>${meta.name} · region #${meta.index} · AAL3 atlas.</p>
+    <p>${escapeHtml(meta.name)} · region #${meta.index} · AAL3 atlas.</p>
     <div class="netmap-note" style="margin-top:14px;">Functional-network label is approximate (AAL3 to Yeo-style).</div>`
 }
 
@@ -3967,9 +4035,25 @@ function tractPasses(e) {
   return true
 }
 
+// Recursively free GPU resources (geometry, material(s), and any textures held
+// by those materials) for an Object3D before it's discarded, so repeated
+// rebuilds — tracts, connection arcs, gizmo faces — don't leak GPU memory over
+// a long session (issues.md B3).
+function disposeObject3D(root) {
+  if (!root) return
+  root.traverse(o => {
+    if (o.geometry) o.geometry.dispose()
+    const mats = Array.isArray(o.material) ? o.material : (o.material ? [o.material] : [])
+    for (const m of mats) {
+      for (const k in m) { const v = m[k]; if (v && v.isTexture) v.dispose() }
+      m.dispose()
+    }
+  })
+}
+
 function disposeTracts() {
   if (!tractGroup) return
-  for (const t of tractGroup.children) { t.geometry.dispose(); t.material.dispose() }
+  disposeObject3D(tractGroup)
   brain.remove(tractGroup)
   tractGroup = null
 }
@@ -4033,7 +4117,8 @@ function arcEndpoint(idx) {
   return rec ? rec.mesh.userData.base.clone().add(rec.mesh.position) : null
 }
 function disposeArcObj(o) {
-  if (o) o.traverse(c => { if (c.geometry) c.geometry.dispose() })
+  // Also frees the per-arc materials (the old version leaked them) — B3.
+  disposeObject3D(o)
 }
 function makeArcObject(arc) {
   const g = new THREE.Group()
@@ -4172,7 +4257,7 @@ function handleConnectClick(e) {
 // ── Region <select> options + arc list / editor rendering ──
 function regionOptions(selIdx) {
   return regions.slice().sort((a, b) => a.meta.displayName.localeCompare(b.meta.displayName))
-    .map(r => `<option value="${r.meta.index}"${r.meta.index === selIdx ? ' selected' : ''}>${r.meta.displayName}</option>`)
+    .map(r => `<option value="${r.meta.index}"${r.meta.index === selIdx ? ' selected' : ''}>${escapeHtml(r.meta.displayName)}</option>`)
     .join('')
 }
 function populateArcDropdowns() {
