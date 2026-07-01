@@ -5,7 +5,7 @@ export async function importNiivue() {
   // Local vendored copy first (no runtime CDN trust, works offline — A3/A5);
   // public CDNs remain only as a last-resort fallback.
   const cdns = [
-    '/vendor/niivue/index.js',
+    '../vendor/niivue/index.js',
     'https://unpkg.com/@niivue/niivue@0.69.0/dist/index.js',
     'https://cdn.jsdelivr.net/npm/@niivue/niivue@0.69.0/dist/index.js',
     'https://unpkg.com/@niivue/niivue@0.69.0/build/niivue/index.js',
@@ -13,7 +13,7 @@ export async function importNiivue() {
   let lastErr
   for (const url of cdns) {
     try {
-      const local = url.startsWith('/vendor/')
+      const local = url.startsWith('../vendor/')
       document.getElementById('loadingMsg').textContent =
         local ? 'Loading NiiVue…' : 'Loading NiiVue from CDN…'
       const mod = await import(url)

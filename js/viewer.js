@@ -181,31 +181,31 @@ function setRegionColor(idx, hex) {
 // ═══════════════════════════════════════════════════════════════════════
 //  ATLAS LOADING
 // ═══════════════════════════════════════════════════════════════════════
-const MNI_URL = '/cache/mni152.nii.gz'
+const MNI_URL = './cache/mni152.nii.gz'
 
 const ATLAS_META = {
   aal: {
     name:       'AAL',
-    volumeURL:  '/cache/aal.nii.gz',
-    labelPath:  '/labels/aal.txt',
+    volumeURL:  './cache/aal.nii.gz',
+    labelPath:  './labels/aal.txt',
     parser:     parseSpace,
   },
   jhu: {
     name:       'JHU',
     volumeURL:  null,
-    labelPath:  '/labels/jhu.txt',
+    labelPath:  './labels/jhu.txt',
     parser:     parsePipe,
   },
   aicha: {
     name:       'AICHA',
     volumeURL:  null,
-    labelPath:  '/labels/AICHAhr.txt',
+    labelPath:  './labels/AICHAhr.txt',
     parser:     parseSpace,
   },
   cit168: {
     name:       'CIT168',
     volumeURL:  null,
-    labelPath:  '/labels/CIT168.txt',
+    labelPath:  './labels/CIT168.txt',
     parser:     parseSpace,
   },
 }
@@ -653,7 +653,7 @@ function renderVolTableBody() {
 // Model + weights are vendored locally under /vendor/ (fetched at the pinned
 // commit 4c87885 by scripts/fetch_vendor.sh), so no brainchop/CDN code or data
 // is trusted at runtime (issues.md A3/A5).
-const BC_MODEL_BASE = '/vendor/brainchop/model5_gw_ae'
+const BC_MODEL_BASE = './vendor/brainchop/model5_gw_ae'
 const TFJS_VER = '4.22.0'
 let _tf = null, _bcModel = null, _segBusy = false
 let _segBackend = 'n/a'   // which TF.js backend inference actually ran on
@@ -676,7 +676,7 @@ async function loadTF() {
   diag('info', 'loadTF: loading TensorFlow.js core', TFJS_VER)
   if (!window.tf) {
     const urls = [
-      `/vendor/tfjs/tf.min.js`,   // local vendored copy first (A3/A5)
+      `./vendor/tfjs/tf.min.js`,   // local vendored copy first (A3/A5)
       `https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@${TFJS_VER}/dist/tf.min.js`,
       `https://unpkg.com/@tensorflow/tfjs@${TFJS_VER}/dist/tf.min.js`,
     ]
@@ -697,7 +697,7 @@ async function loadTF() {
   // Ensure the WASM backend is registered before we try to select it
   if (order.includes('wasm') && (!_tf.findBackend || !_tf.findBackend('wasm'))) {
     try {
-      const wasmBase = '/vendor/tfjs/'   // local vendored .wasm binaries (A3/A5)
+      const wasmBase = './vendor/tfjs/'   // local vendored .wasm binaries (A3/A5)
       try { await loadScript(wasmBase + 'tf-backend-wasm.min.js') }
       catch (_) { await loadScript(`https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-wasm@${TFJS_VER}/dist/tf-backend-wasm.min.js`) }
       if (_tf.wasm && _tf.wasm.setWasmPaths) _tf.wasm.setWasmPaths(wasmBase)

@@ -77,7 +77,7 @@ initCollapsibleSections()
 let _bundlePromise = null
 function getBundle() {
   if (!_bundlePromise) {
-    _bundlePromise = fetch('/meshes/brain_bundle.json').then(r => {
+    _bundlePromise = fetch('./meshes/brain_bundle.json').then(r => {
       if (!r.ok) throw new Error('meshes/brain_bundle.json not found.\nRun:  python build_brain_bundle.py')
       return r.json()
     })
@@ -251,7 +251,7 @@ const TRACT_TYPE_COLORS = {
 // ───── Init ─────
 async function importThree() {
   const cdns = [
-    '/vendor/three/three.module.js',   // local vendored copy first (A3/A5)
+    '../vendor/three/three.module.js',   // local vendored copy first (A3/A5)
     'https://unpkg.com/three@0.160.0/build/three.module.js',
     'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js',
   ]
@@ -1697,9 +1697,9 @@ function fmriInvAffine(m) {
 // slice strip's mapping (FS.labelToCol) when it has already been built.
 async function fmriEnsureAtlas() {
   const lib = await fmriWaitNiivue()
-  if (!FS.atlasImg) FS.atlasImg = await lib.NVImage.loadFromUrl({ url: '/cache/aal.nii.gz' })
+  if (!FS.atlasImg) FS.atlasImg = await lib.NVImage.loadFromUrl({ url: './cache/aal.nii.gz' })
   if (!FS.labelToCol) {
-    const txt = await (await fetch('/labels/aal.txt')).text()
+    const txt = await (await fetch('./labels/aal.txt')).text()
     FS.labels = txt.split('\n').map(l => l.trim()).filter(Boolean).map(l => {
       const p = l.split(/\s+/); return { index: parseInt(p[0]), name: p[1] }
     }).filter(r => !isNaN(r.index) && r.name)
@@ -2318,9 +2318,9 @@ async function fmriInitSlices() {
     FS.nv.opts.multiplanarShowRender = lib.SHOW_RENDER.NEVER
     FS.nv.opts.crosshairGap = 6
     FS.nv.setMultiplanarPadPixels(4)
-    await FS.nv.loadVolumes([{ url: '/cache/mni152.nii.gz' }, { url: '/cache/aal.nii.gz' }])
+    await FS.nv.loadVolumes([{ url: './cache/mni152.nii.gz' }, { url: './cache/aal.nii.gz' }])
     // AAL label table (index → name), same file the Figure tab uses.
-    const txt = await (await fetch('/labels/aal.txt')).text()
+    const txt = await (await fetch('./labels/aal.txt')).text()
     FS.labels = txt.split('\n').map(l => l.trim()).filter(Boolean).map(l => {
       const p = l.split(/\s+/); return { index: parseInt(p[0]), name: p[1] }
     }).filter(r => !isNaN(r.index) && r.name)

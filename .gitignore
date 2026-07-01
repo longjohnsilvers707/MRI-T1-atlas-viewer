@@ -1,5 +1,9 @@
 
-cache/
+# Transient atlas download cache, EXCEPT the two NIfTIs the static site needs
+# served directly (GitHub Pages has no server.py to fetch them on demand).
+cache/*
+!cache/aal.nii.gz
+!cache/mni152.nii.gz
 
 # Python
 __pycache__/
