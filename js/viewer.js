@@ -472,14 +472,39 @@ function saveScreenshot() {
 
 // Capture the Figure (NiiVue) canvas at native resolution for the Collection panel.
 // Synchronously redraws so the WebGL backbuffer is fresh before toDataURL reads it.
-window.__captureFigure = function () {
+//
+// `pane` selects a single view: 'axial' | 'coronal' | 'sagittal' | 'render', or
+// 'multi' for the standard four-up multiplanar layout. Single panes are captured
+// by momentarily switching NiiVue's slice type and restoring it before we return,
+// so the on-screen view is unchanged (both draws happen in one synchronous call,
+// so the user never sees the intermediate frame).
+window.__captureFigurePane = function (pane) {
   if (!nv) return null
-  nv.drawScene()
-  const url = document.getElementById('gl1').toDataURL('image/png')
-  if (!url || url.length < 200) return null
-  const meta = (typeof ATLAS_META !== 'undefined' && ATLAS_META[currentKey]) ? ATLAS_META[currentKey] : null
-  return { url, tab: 'figure', label: 'Figure · ' + (meta ? meta.name : currentKey) }
+  const TYPE = {
+    axial: nv.sliceTypeAxial, coronal: nv.sliceTypeCoronal,
+    sagittal: nv.sliceTypeSagittal, render: nv.sliceTypeRender,
+    multi: nv.sliceTypeMultiplanar,
+  }
+  const NAME = { axial: 'Axial', coronal: 'Coronal', sagittal: 'Sagittal', render: '3D render', multi: 'All views' }
+  const t = TYPE[pane]
+  if (t == null) return null
+  const prev = nv.opts.sliceType
+  try {
+    if (t !== prev) nv.setSliceType(t)
+    nv.drawScene()
+    const url = document.getElementById('gl1').toDataURL('image/png')
+    if (!url || url.length < 200) return null
+    const meta = (typeof ATLAS_META !== 'undefined' && ATLAS_META[currentKey]) ? ATLAS_META[currentKey] : null
+    const atlas = meta ? meta.name : currentKey
+    return { url, tab: 'figure', label: 'Figure · ' + NAME[pane] + ' · ' + atlas }
+  } catch (e) {
+    console.error(e); return null
+  } finally {
+    if (t !== prev) { nv.setSliceType(prev); nv.drawScene() }
+  }
 }
+// Back-compat: the plain "current view" capture is the full multiplanar layout.
+window.__captureFigure = function () { return window.__captureFigurePane('multi') }
 
 // ═══════════════════════════════════════════════════════════════════════
 //  FIGURE MODE  (hides crosshairs & status bar for clean capture)

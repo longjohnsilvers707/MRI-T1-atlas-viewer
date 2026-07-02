@@ -728,12 +728,15 @@
   </div>
   <div class="vp-body">
     <div class="vp-empty" id="vpEmpty">
-      No views yet.<br>Open any tab, frame a brain you like,<br>then “＋ Add current view”.
+      No views yet.<br>Open any tab, frame a brain you like,<br>then “＋ Add view ▾” and pick a panel.<br>Drag rows to reorder.
     </div>
     <div class="vp-list" id="vpList" style="display:flex;flex-direction:column;gap:8px;"></div>
   </div>
   <div class="vp-footer">
-    <button class="vp-btn primary" id="vpAdd">＋ Add current view</button>
+    <div class="vp-add-wrap">
+      <button class="vp-btn primary" id="vpAdd" title="Pick a specific view from the current tab to add">＋ Add view ▾</button>
+      <div class="vp-menu" id="vpMenu" hidden></div>
+    </div>
     <div class="vp-opts">
       <label>Cols
         <select id="vpCols">
@@ -745,10 +748,36 @@
       <label><input type="checkbox" id="vpLabels" checked> Labels</label>
     </div>
     <div class="vp-row">
+      <button class="vp-btn" id="vpArrangeBtn" title="Arrange the figures in a grid before saving" disabled>▦ Arrange</button>
       <button class="vp-btn" id="vpSave">⬇ Save PNG</button>
       <button class="vp-btn" id="vpClear">Clear</button>
     </div>
     <div class="vp-status" id="vpStatus"></div>
+  </div>
+</div>
+
+<!-- ═══════════════ ARRANGE OVERLAY (reorder tiles before saving PNG) ═══════════════ -->
+<div id="vpArrange" aria-label="Arrange figures">
+  <div class="vpa-card">
+    <div class="vpa-head">
+      <h2>Arrange figures</h2>
+      <div class="vpa-head-opts">
+        <label>Cols
+          <select id="vpaCols">
+            <option value="auto">Auto</option>
+            <option value="1">1</option><option value="2">2</option>
+            <option value="3">3</option><option value="4">4</option>
+          </select>
+        </label>
+        <label><input type="checkbox" id="vpaLabels" checked> Labels</label>
+      </div>
+      <button id="vpaClose" title="Close">×</button>
+    </div>
+    <div class="vpa-hint">Drag tiles to reorder — this is exactly how the saved PNG will be laid out.</div>
+    <div class="vpa-grid" id="vpaGrid"></div>
+    <div class="vpa-foot">
+      <button class="vp-btn" id="vpaSave">⬇ Save PNG</button>
+    </div>
   </div>
 </div>
 
