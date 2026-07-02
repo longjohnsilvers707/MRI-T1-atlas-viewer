@@ -1051,6 +1051,142 @@ function closeCliModal() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+//  SHAREABLE PERMALINK
+//
+//  Encodes the whole figure — atlas, which regions are shown and in what
+//  colour, the X/Y/Z slice positions, and every Display control — into a
+//  compact string carried in the URL hash (#fig=…). Anyone who opens that
+//  link (or refreshes the page) gets the identical figure back. This is the
+//  publication-workflow counterpart to "Export CLI command": the CLI string
+//  reproduces the figure in the terminal, the link reproduces it in-browser.
+// ═══════════════════════════════════════════════════════════════════════
+const SHARE_VERSION = 1
+
+// UTF-8-safe base64url (URL hash can't carry +, /, = cleanly).
+function b64urlEncode(str) {
+  const b64 = btoa(unescape(encodeURIComponent(str)))
+  return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+}
+function b64urlDecode(str) {
+  const b64 = str.replace(/-/g, '+').replace(/_/g, '/')
+  return decodeURIComponent(escape(atob(b64)))
+}
+
+// Snapshot the current figure into a plain object (short keys keep the URL small).
+function buildShareState() {
+  const $ = id => document.getElementById(id)
+  return {
+    v:  SHARE_VERSION,
+    a:  currentKey,
+    // Only the visible regions travel; each carries its current hex colour so a
+    // recoloured figure comes back exactly. Missing regions restore as hidden.
+    r:  regions.filter(r => r.visible && r.index !== 0)
+               .map(r => [r.name, rgb2hex(r.color).replace('#', '')]),
+    x:  parseInt($('slX').value, 10),
+    y:  parseInt($('slY').value, 10),
+    z:  parseInt($('slZ').value, 10),
+    ao: parseInt($('slAtlasOpacity').value, 10),
+    bo: parseInt($('slBgOpacity').value, 10),
+    ol: $('selOutline').value,
+    rn: $('selRender').value,
+    bg: $('bgColor').value,
+    sa: $('chkShowAtlas').checked ? 1 : 0,
+    ch: $('chkCrosshair').checked ? 1 : 0,
+    ip: $('chkInterp').checked ? 1 : 0,
+  }
+}
+
+function shareLink() {
+  const encoded = b64urlEncode(JSON.stringify(buildShareState()))
+  return `${location.origin}${location.pathname}#fig=${encoded}`
+}
+
+function copyShareLink() {
+  const url = shareLink()
+  // Reflect the state in the address bar too, so a plain refresh keeps the figure.
+  try { history.replaceState(null, '', url) } catch (_) { /* file:// etc. */ }
+  navigator.clipboard.writeText(url)
+    .then(() => toast('Shareable link copied to clipboard'))
+    .catch(() => toast('Copy failed — the link is now in the address bar', 'err'))
+}
+
+// Push a decoded share-state onto the current figure. Assumes the target atlas
+// is already loaded (restoreFromHash handles the async atlas load first).
+function applyShareState(s) {
+  const $ = id => document.getElementById(id)
+
+  // Display controls: set the DOM, then let the existing sync paths push to NiiVue.
+  if (s.ao != null) $('slAtlasOpacity').value = s.ao
+  if (s.bo != null) $('slBgOpacity').value    = s.bo
+  if (s.ol != null) $('selOutline').value     = s.ol
+  if (s.rn != null) $('selRender').value      = s.rn
+  if (s.sa != null) $('chkShowAtlas').checked = !!s.sa
+  if (s.ch != null) $('chkCrosshair').checked = !!s.ch
+  if (s.ip != null) $('chkInterp').checked    = !!s.ip
+  if (s.bg) {
+    $('bgColor').value = s.bg
+    nv.opts.backColor = [...hex2rgb(s.bg).map(c => c / 255), 1]
+  }
+  syncDisplayControls()
+  if (s.ch != null && !figureMode) nv.opts.crosshairWidth = s.ch ? 1 : 0
+
+  // Region visibility + colours (matched by name — atlas-independent).
+  if (Array.isArray(s.r) && regions.length) {
+    const want = new Map(s.r.map(([n, hex]) => [n, '#' + hex]))
+    for (const r of regions) {
+      if (r.index === 0) continue
+      if (want.has(r.name)) { r.visible = true; r.color = hex2rgb(want.get(r.name)) }
+      else r.visible = false
+    }
+    applyColormap()
+    renderList()
+  }
+
+  // Slice positions (skip if the atlas has no volume loaded).
+  if (nv && nv.volumes.length >= 2) {
+    if (s.x != null) { $('slX').value = s.x; setSliceMM(0, s.x) }
+    if (s.y != null) { $('slY').value = s.y; setSliceMM(1, s.y) }
+    if (s.z != null) { $('slZ').value = s.z; setSliceMM(2, s.z) }
+  }
+  nv.drawScene()
+}
+
+// Read #fig=… on startup and rebuild the figure. Called from init() once the
+// default atlas is up, so we only pay the extra atlas load when the link asks
+// for a non-default one.
+async function restoreFromHash() {
+  const m = /[#&]fig=([^&]+)/.exec(location.hash)
+  if (!m) return
+  let state
+  try { state = JSON.parse(b64urlDecode(m[1])) } catch (e) {
+    diag('warn', 'shared link decode failed', e); return
+  }
+  if (!state || state.v !== SHARE_VERSION) {
+    toast('Shared link is from an incompatible version', 'err'); return
+  }
+
+  // Switch atlas if the link needs a different one than the default (aal).
+  if (state.a && state.a !== currentKey) {
+    document.getElementById('atlasSelect').value = state.a
+    ;['aal', 'jhu', 'aicha', 'cit168'].forEach(k => {
+      const el = document.getElementById(`panel-${k}`)
+      if (el) el.style.display = k === state.a ? '' : 'none'
+    })
+    await loadAtlas(state.a)
+    // File-backed atlases (jhu/aicha/cit168) have no bundled volume, so the load
+    // above only set up the region list. Restore colours/visibility anyway and
+    // tell the user to drop in the NIfTI to see the slices.
+    if (nv.volumes.length < 2) {
+      applyShareState(state)
+      toast(`This link uses the ${state.a.toUpperCase()} atlas — load its NIfTI file to see the slices`, 'info')
+      return
+    }
+  }
+  applyShareState(state)
+  toast('Figure restored from shared link')
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 //  INIT
 // ═══════════════════════════════════════════════════════════════════════
 async function init() {
@@ -1206,6 +1342,9 @@ async function init() {
     toast('Preset downloaded')
   })
 
+  // ── Shareable permalink ──────────────────────────────────
+  document.getElementById('btnShareLink').addEventListener('click', copyShareLink)
+
   // ── Canvas events ────────────────────────────────────────
   const canvas = document.getElementById('gl1')
   canvas.addEventListener('mousemove', onMouseMove)
@@ -1218,6 +1357,9 @@ async function init() {
   // ── Load default atlas ───────────────────────────────────
   showAtlasPanel('aal')
   await loadAtlas('aal')
+
+  // ── Restore a shared figure, if the URL carries one ──────
+  await restoreFromHash()
 }
 
 init().then(() => { window.__appReady = true }).catch(err => {

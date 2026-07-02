@@ -1126,3 +1126,59 @@ canvas#fmriPlot { width: 100%; height: 78px; display: block; cursor: pointer; }
 .fm-conn-r { flex: 0 0 auto; color: var(--dim); font-variant-numeric: tabular-nums; }
 .fm-conn-empty { font-size: 11px; color: var(--dim); padding: 3px 5px; }
 .fm-conn-select { width: 100%; }
+
+/* ═══════════════ QUIZ PANEL (Advanced view) ═══════════════ */
+#quizPanel {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 340px;
+  max-width: calc(100% - 20px);
+  background: rgba(22,27,34,0.94);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.5);
+  padding: 11px 13px 12px;
+  z-index: 60;
+  animation: quizIn 0.18s ease;
+}
+#quizPanel[hidden] { display: none; }
+@keyframes quizIn { from { opacity: 0; transform: translate(-50%, -6px); } to { opacity: 1; transform: translate(-50%, 0); } }
+
+.quiz-scorebar {
+  display: flex; align-items: center; gap: 10px;
+  font-size: 11px; color: var(--dim); margin-bottom: 8px;
+}
+.quiz-score { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--text); }
+.quiz-streak { color: #e0a33a; }
+.quiz-x {
+  margin-left: auto; background: none; border: none; color: var(--dim);
+  font-size: 15px; line-height: 1; cursor: pointer; padding: 0 2px;
+}
+.quiz-x:hover { color: var(--danger); }
+
+.quiz-prompt {
+  font-size: 14px; line-height: 1.4; color: var(--text); font-weight: 500;
+  margin-bottom: 8px;
+}
+.quiz-prompt b { color: var(--accent); }
+
+.quiz-feedback {
+  font-size: 12px; line-height: 1.4; min-height: 0; margin-bottom: 8px;
+  display: none;
+}
+.quiz-feedback.show { display: block; }
+.quiz-feedback.right { color: var(--success); }
+.quiz-feedback.wrong { color: var(--danger); }
+.quiz-feedback .qf-info { color: var(--dim); display: block; margin-top: 3px; }
+
+.quiz-actions { display: flex; gap: 7px; }
+.quiz-actions button {
+  flex: 1; font-size: 11px; padding: 6px 8px; border-radius: var(--radius);
+  border: 1px solid var(--border); background: var(--panel2); color: var(--text);
+  cursor: pointer;
+}
+.quiz-actions button:hover { border-color: var(--accent); }
+.quiz-actions button[hidden] { display: none; }

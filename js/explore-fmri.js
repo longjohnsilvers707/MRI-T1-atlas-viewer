@@ -599,6 +599,12 @@ function onHover(e) {
   const m = pick(e)
   if (m === hovered) return
   hovered = m; applyHighlight()
+  // While a quiz question is open, don't leak the answer via the hover readout.
+  if (quiz.active && quiz.awaiting) {
+    document.getElementById('exploreHover').textContent =
+      'Quiz — click the region you think is the answer'
+    return
+  }
   const meta = m && m.userData.meta
   document.getElementById('exploreHover').textContent = meta
     ? `${meta.displayName}  ·  ${meta.lobe} / ${meta.network} / ${meta.hemisphere}`
@@ -606,6 +612,7 @@ function onHover(e) {
 }
 function handleClick(e) {
   if (connectMode) { handleConnectClick(e); return }
+  if (quiz.active && quiz.awaiting) { handleQuizAnswer(pick(e)); return }
   selectMesh(pick(e))
 }
 function selectMesh(m) {
@@ -740,6 +747,7 @@ function updateListSelection() {
 
 // ───── Learn mode ─────
 function setLearnMode(on) {
+  if (on && quiz.active) endQuiz()      // the two selection modes can't coexist
   learnMode = on
   const btn = document.getElementById('exLearn')
   btn.classList.toggle('active', on)
@@ -1270,9 +1278,18 @@ function setupUI() {
   document.getElementById('exScreenshot').onclick = () => savePNG()
   document.getElementById('exLearn').onclick = () => setLearnMode(!learnMode)
   document.getElementById('learnClose').onclick = () => setLearnMode(false)
+
+  // ── Quiz mode ──
+  document.getElementById('exQuiz').onclick   = () => quiz.active ? endQuiz() : startQuiz()
+  document.getElementById('quizEnd').onclick  = () => endQuiz()
+  document.getElementById('quizSkip').onclick = () => skipQuestion()
+  document.getElementById('quizNext').onclick = () => nextQuestion()
+
   window.addEventListener('keydown', e => {
     if (e.key === 'Escape' && !document.getElementById('view-explore').hidden) {
-      if (connectMode) exitConnectMode(); else selectMesh(null)
+      if (quiz.active) endQuiz()
+      else if (connectMode) exitConnectMode()
+      else selectMesh(null)
     }
   })
 
@@ -1382,6 +1399,149 @@ function exToast(msg, type) {
   const el = document.getElementById('exploreToast')
   el.textContent = msg; el.className = type === 'err' ? 'show err' : 'show'
   clearTimeout(el._t); el._t = setTimeout(() => el.classList.remove('show'), 3000)
+}
+
+// ───── Anatomy quiz ─────
+// A click-to-identify game built on the same picking + highlight machinery as
+// Learn mode. Three question styles keep it fresh: pinpoint a named region, or
+// click *any* region belonging to a given lobe / functional network. Only the
+// regions currently on screen are in play, so isolating a group scopes the quiz
+// (e.g. drill just the temporal lobe).
+const quiz = {
+  active: false, awaiting: false, mode: 'find',
+  target: null, groupKey: '', lastIdx: -1,
+  correct: 0, total: 0, streak: 0, best: 0,
+}
+
+function quizPool() { return regions.filter(r => r.mesh.visible) }
+
+function startQuiz() {
+  const pool = quizPool()
+  if (pool.length < 4) { exToast('Show at least 4 regions to start a quiz', 'err'); return }
+  if (connectMode) exitConnectMode()
+  if (learnMode) setLearnMode(false)
+  quiz.active = true
+  quiz.correct = quiz.total = quiz.streak = quiz.best = 0
+  quiz.lastIdx = -1
+  const btn = document.getElementById('exQuiz')
+  btn.classList.add('active'); btn.textContent = 'Quiz: on'
+  document.getElementById('quizPanel').hidden = false
+  updateQuizScore()
+  nextQuestion()
+}
+
+function endQuiz() {
+  if (!quiz.active) return
+  quiz.active = quiz.awaiting = false
+  const btn = document.getElementById('exQuiz')
+  btn.classList.remove('active'); btn.textContent = 'Quiz'
+  document.getElementById('quizPanel').hidden = true
+  selectMesh(null)
+  document.getElementById('exploreHover').textContent =
+    'Hover a region to identify · drag to orbit · scroll to zoom'
+}
+
+function nextQuestion() {
+  const pool = quizPool()
+  if (pool.length < 2) { endQuiz(); return }
+  selectMesh(null)                       // clear any reveal highlight
+
+  // Only offer group questions when the visible set spans ≥2 lobes/networks,
+  // otherwise "click any region in X" is trivially the whole brain.
+  const lobes    = new Set(pool.map(r => r.meta.lobe))
+  const networks = new Set(pool.map(r => r.meta.network))
+  const styles = ['find', 'find', 'find']
+  if (lobes.size    >= 2) styles.push('lobe')
+  if (networks.size >= 2) styles.push('network')
+  quiz.mode = styles[Math.floor(Math.random() * styles.length)]
+
+  const promptEl = document.getElementById('quizPrompt')
+  if (quiz.mode === 'find') {
+    // Pick a region, avoiding an immediate repeat of the previous target.
+    let pick
+    do { pick = pool[Math.floor(Math.random() * pool.length)] }
+    while (pool.length > 1 && pick.meta.index === quiz.lastIdx)
+    quiz.target = pick; quiz.lastIdx = pick.meta.index
+    promptEl.innerHTML = `Find <b>${escapeHtml(pick.meta.displayName)}</b> in the 3-D brain.`
+  } else {
+    const key = quiz.mode === 'lobe'
+      ? [...lobes][Math.floor(Math.random() * lobes.size)]
+      : [...networks][Math.floor(Math.random() * networks.size)]
+    quiz.target = null; quiz.groupKey = key
+    const label = quiz.mode === 'lobe' ? 'lobe' : 'network'
+    promptEl.innerHTML = `Click any region in the <b>${escapeHtml(key)}</b> ${label}.`
+  }
+
+  const fb = document.getElementById('quizFeedback')
+  fb.className = 'quiz-feedback'; fb.innerHTML = ''
+  document.getElementById('quizNext').hidden = true
+  document.getElementById('quizSkip').hidden = false
+  quiz.awaiting = true
+}
+
+function handleQuizAnswer(m) {
+  if (!m) return                          // clicked empty space — let them retry
+  const meta = m.userData.meta
+  let correct
+  if (quiz.mode === 'find')        correct = (m === quiz.target.mesh)
+  else if (quiz.mode === 'lobe')   correct = (meta.lobe === quiz.groupKey)
+  else                             correct = (meta.network === quiz.groupKey)
+
+  quiz.awaiting = false
+  quiz.total++
+  if (correct) { quiz.correct++; quiz.streak++; quiz.best = Math.max(quiz.best, quiz.streak) }
+  else quiz.streak = 0
+
+  // Reveal: on a wrong "find" show the region they *should* have clicked;
+  // otherwise highlight what they clicked.
+  selectMesh(quiz.mode === 'find' && !correct ? quiz.target.mesh : m)
+  showQuizFeedback(correct, meta, false)
+  updateQuizScore()
+}
+
+function skipQuestion() {
+  if (!quiz.awaiting) return
+  quiz.streak = 0
+  quiz.awaiting = false
+  if (quiz.mode === 'find') selectMesh(quiz.target.mesh)
+  showQuizFeedback(false, null, true)
+  updateQuizScore()
+}
+
+function showQuizFeedback(correct, clickedMeta, skipped) {
+  const fb = document.getElementById('quizFeedback')
+  let html
+  if (skipped) {
+    fb.className = 'quiz-feedback show wrong'
+    html = quiz.mode === 'find'
+      ? `Skipped — this is <b>${escapeHtml(quiz.target.meta.displayName)}</b>.`
+      : `Skipped.`
+    if (quiz.mode === 'find') html += `<span class="qf-info">${escapeHtml(infoFor(quiz.target.meta))}</span>`
+  } else if (correct) {
+    fb.className = 'quiz-feedback show right'
+    html = `✓ Correct — <b>${escapeHtml(clickedMeta.displayName)}</b>.`
+    if (quiz.mode === 'find') html += `<span class="qf-info">${escapeHtml(infoFor(clickedMeta))}</span>`
+    else html += `<span class="qf-info">It belongs to the ${escapeHtml(quiz.groupKey)} ${quiz.mode}.</span>`
+  } else {
+    fb.className = 'quiz-feedback show wrong'
+    if (quiz.mode === 'find') {
+      html = `✗ You clicked <b>${escapeHtml(clickedMeta.displayName)}</b>. The correct region is highlighted.`
+      html += `<span class="qf-info">${escapeHtml(infoFor(quiz.target.meta))}</span>`
+    } else {
+      const clickedGroup = quiz.mode === 'lobe' ? clickedMeta.lobe : clickedMeta.network
+      html = `✗ <b>${escapeHtml(clickedMeta.displayName)}</b> is ${escapeHtml(clickedGroup)}, not ${escapeHtml(quiz.groupKey)}.`
+    }
+  }
+  fb.innerHTML = html
+  document.getElementById('quizNext').hidden = false
+  document.getElementById('quizSkip').hidden = true
+}
+
+function updateQuizScore() {
+  document.getElementById('quizScore').textContent =
+    `${quiz.correct} / ${quiz.total} correct`
+  const s = document.getElementById('quizStreak')
+  s.textContent = quiz.streak >= 2 ? `🔥 ${quiz.streak} streak` : (quiz.best >= 2 ? `best ${quiz.best}` : '')
 }
 
 // ───── Render loop ─────

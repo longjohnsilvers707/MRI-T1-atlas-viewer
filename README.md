@@ -1,5 +1,7 @@
 
 
+**▶ [Open the live viewer](https://longjohnsilvers707.github.io/MRI-T1-atlas-viewer/)** — runs entirely in your browser, no install required.
+
 Browser-based viewer for the AAL, JHU, AICHA, and CIT168 brain
 atlases on the MNI152 template. Built on [NiiVue](https://niivue.com).
 
@@ -62,6 +64,16 @@ workflow:
 4. Set Outline = Opaque in Display for crisp ROI edges
 5. Move the X/Y/Z sliders to show the slice planes you want
 6. Click Figure mode → Save PNG
+
+**Share a figure.** Under **Export & share** in the sidebar, **🔗 Copy
+shareable link** bundles the entire figure — atlas, which regions are shown and
+in what colour, the X/Y/Z slice positions, and every Display setting — into a URL
+(`…/#fig=…`). Open that link (or just refresh the page) to get the exact same
+figure back. It's the in-browser counterpart to **Export CLI command**, which
+reproduces the same figure from the terminal. The link is self-contained (all
+state lives in the URL, nothing is uploaded); for the file-backed atlases
+(JHU / AICHA / CIT168) the recipient still drops in the same NIfTI to see the
+slices, while the region selection and colours restore immediately.
 
 ---
 
@@ -195,6 +207,13 @@ region meshes (`meshes/*.obj`):
   The connectivity is *schematic* — inferred from region geometry and network
   labels as a teaching aid, **not** subject tractography.
 * **Hover** any region to identify it; **click** to select and dim the others.
+* **Learn** mode — click a region to read what it is and what it does.
+* **Quiz** mode — test yourself. The app names a region (or a lobe / functional
+  network) and you find it by clicking in the 3-D brain; it tracks your score and
+  streak and shows the answer with a short explanation after each question. Only
+  the regions currently on screen are in play, so isolating a group first
+  (e.g. the temporal lobe) scopes the quiz to it. Hover labels are hidden while a
+  question is open so they don't give the answer away.
 * Search + per-region show/hide; **Save PNG** of the 3-D view.
 * Drag to orbit, scroll to zoom, shift-drag (or right-drag) to pan.
 
@@ -329,6 +348,24 @@ its atlas catalog informed which atlases this viewer ships labels for.
 ---
 
 ## Changelog
+
+### 2026-07-01
+
+Two new features, no changes to existing workflows.
+
+* **Shareable figure links (Figure tab).** A new **🔗 Copy shareable link**
+  button under **Export & share** encodes the whole figure — atlas, visible
+  regions and their colours, X/Y/Z slice positions, and every Display control —
+  into the URL hash (`#fig=…`). Opening the link (or refreshing) restores the
+  identical figure. Everything lives in the URL; nothing is uploaded. It's the
+  browser-side twin of **Export CLI command**.
+* **Anatomy quiz (Advanced view).** A **Quiz** toolbar button turns the 3-D
+  brain into a click-to-identify game: the app asks you to find a named region —
+  or any region in a given lobe / functional network — and you answer by clicking
+  in the scene. Score and streak are tracked, and each answer is revealed with a
+  short explanation (reusing the Learn-mode descriptions). Only regions currently
+  on screen are in play, so isolating a group scopes the quiz; hover labels are
+  suppressed mid-question so they don't spoil the answer.
 
 ### 2026-06-30
 
