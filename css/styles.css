@@ -1056,6 +1056,77 @@ canvas#fmriPlot { width: 100%; height: 78px; display: block; cursor: pointer; }
 .vp-status { font-size: 10px; color: var(--dim); min-height: 13px; text-align: center; }
 .vp-status.err { color: var(--danger); }
 .vp-status.ok { color: var(--accent); }
+
+/* ── Dropdown-arrow alignment ──────────────────────────
+   The custom chevron is pinned a fixed inset from each select's right edge, and
+   the sidebar selects already share the same right edge — but they were rendering
+   at different heights (base 5px vs .ctrl-row 3px padding), which made the arrows
+   step up and down instead of sitting on one level line. A shared min-height
+   (box-sizing is border-box globally) equalizes them. */
+select { min-height: 30px; }
+.ctrl-row select { min-height: 30px; }
+
+/* ── "Add view ▾" menu (lists the current tab's individually-addable views) ── */
+.vp-add-wrap { position: relative; }
+.vp-menu {
+  position: absolute; left: 0; right: 0; bottom: calc(100% + 5px);
+  background: #1c2230; border: 1px solid var(--border); border-radius: 7px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.55); padding: 4px; z-index: 5;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.vp-menu[hidden] { display: none; }
+.vp-menu-item {
+  text-align: left; background: none; border: none; color: var(--text);
+  font-size: 12px; padding: 7px 9px; border-radius: 5px; cursor: pointer; width: 100%;
+}
+.vp-menu-item:hover { background: var(--accent-dark); color: #fff; }
+
+/* ── Arrange overlay (WYSIWYG reorder before saving the panel PNG) ── */
+#vpArrange {
+  position: fixed; inset: 0; z-index: 320;
+  background: rgba(13,17,23,0.82);
+  display: none; align-items: center; justify-content: center; padding: 24px;
+}
+#vpArrange.active { display: flex; }
+.vpa-card {
+  background: #161b22; border: 1px solid var(--border); border-radius: 10px;
+  width: min(1000px, 96vw); max-height: 92vh; display: flex; flex-direction: column;
+  overflow: hidden; box-shadow: 0 14px 44px rgba(0,0,0,0.6);
+}
+.vpa-head {
+  display: flex; align-items: center; gap: 14px;
+  padding: 12px 16px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.vpa-head h2 { font-size: 15px; font-weight: 600; margin: 0; color: var(--text); }
+.vpa-head-opts { display: flex; align-items: center; gap: 14px; margin-left: auto; font-size: 12px; color: var(--dim); }
+.vpa-head-opts label { display: flex; align-items: center; gap: 5px; }
+.vpa-head-opts select { width: auto; min-width: 66px; }
+.vpa-head #vpaClose {
+  background: none; border: none; color: var(--dim); font-size: 22px; line-height: 1;
+  cursor: pointer; padding: 0 4px; width: auto;
+}
+.vpa-head #vpaClose:hover { color: var(--text); }
+.vpa-hint { padding: 8px 16px 0; font-size: 11px; color: var(--dim); }
+.vpa-grid { display: grid; gap: 10px; padding: 14px 16px; overflow: auto; align-content: start; }
+.vpa-cell {
+  position: relative; background: #000; border: 1px solid var(--border); border-radius: 8px;
+  overflow: hidden; cursor: grab; aspect-ratio: 4 / 3; display: flex; flex-direction: column;
+}
+.vpa-cell.dragging { opacity: .4; }
+.vpa-cell.drag-over { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent) inset; }
+.vpa-cell img { width: 100%; height: 100%; object-fit: contain; flex: 1; min-height: 0; }
+.vpa-cell .vpa-cap {
+  font-size: 11px; color: #c9d1d9; background: #0d1117; padding: 4px 6px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 0 0 auto;
+}
+.vpa-cell .vpa-num {
+  position: absolute; top: 5px; left: 5px; min-width: 18px; height: 18px; padding: 0 5px;
+  border-radius: 999px; background: rgba(13,17,23,0.85); color: var(--accent);
+  border: 1px solid var(--border); font-size: 11px; font-weight: 600;
+  display: flex; align-items: center; justify-content: center;
+}
+.vpa-foot { padding: 12px 16px; border-top: 1px solid var(--border); flex-shrink: 0; display: flex; justify-content: flex-end; }
+.vpa-foot .vp-btn { width: auto; min-width: 150px; }
 /* ── CLI Export panel + modal ───────────────────────── */
 #exportCliPanel {
   padding: 8px 14px 10px;

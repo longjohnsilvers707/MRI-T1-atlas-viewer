@@ -635,9 +635,18 @@ function applyHighlight() {
     mat.opacity = op
     mat.transparent = op < 1
     mat.depthWrite = op >= 1                  // translucent → don't occlude (see-through)
-    const glassy = !focus && u.opacity < 1    // glossy sheen for real glass, not focus-dimming
-    mat.shininess = glassy ? 80 : 8
-    mat.specular.setHex(glassy ? 0x5a6b7d : 0x111111)
+    const glassy = !focus && u.opacity < 1    // real per-region glass, not focus-dimming
+    // Glass = a hollow, see-through shell: render both faces (three does a proper
+    // back-then-front pass for double-sided transparent mats) so the far wall of
+    // the blob shows through, reading as volume rather than a thin translucent cap.
+    // DOUBLE_SIDED is a compile-time #define + program-cache key, so flag a shader
+    // rebuild only when the side actually flips (not every slider tick).
+    const side = glassy ? THREE.DoubleSide : THREE.FrontSide
+    if (mat.side !== side) { mat.side = side; mat.needsUpdate = true }
+    // Keep the sheen faint. A strong specular hotspot adds light on top and reads
+    // as polished *solid* plastic, masking the transparency instead of selling it.
+    mat.shininess = glassy ? 24 : 8
+    mat.specular.setHex(glassy ? 0x223140 : 0x111111)
     mat.emissive.setHex(isSel ? 0x2554b0 : (hovered && r.mesh === hovered ? 0x444a55 : 0x000000))
   }
   needsRender = true
@@ -2534,16 +2543,47 @@ window.__captureExplore = function () {
   renderer.render(scene, camera)
   const url = document.getElementById('glExplore').toDataURL('image/png')
   if (!url || url.length < 200) return null
-  return { url, tab: 'explore', label: 'Advanced view' }
+  return { url, tab: 'explore', label: 'Advanced 3-D view' }
 }
-window.__captureFmri = function () {
-  if (!F.renderer) return null
-  F.renderer.render(F.scene, F.camera)
-  const url = document.getElementById('glFmri').toDataURL('image/png')
-  if (!url || url.length < 200) return null
+
+// fMRI tab has three separate views: the 3-D brain (glFmri), the time-series
+// graph (fmriPlot, a 2-D canvas), and the axial/coronal/sagittal slice strip
+// (its own NiiVue instance FS.nv). `pane` picks one.
+window.__captureFmriPane = function (pane) {
   const tlabel = (F.T > 0) ? ' · t=' + (F.idx || 0) : ''
-  return { url, tab: 'fmri', label: 'fMRI' + tlabel }
+  if (pane === 'brain') {
+    if (!F.renderer) return null
+    F.renderer.render(F.scene, F.camera)
+    const url = document.getElementById('glFmri').toDataURL('image/png')
+    if (!url || url.length < 200) return null
+    return { url, tab: 'fmri', label: 'fMRI · 3D brain' + tlabel }
+  }
+  if (pane === 'graph') {
+    const cv = document.getElementById('fmriPlot')
+    if (!cv) return null
+    const url = cv.toDataURL('image/png')       // 2-D canvas — always readable
+    if (!url || url.length < 200) return null
+    return { url, tab: 'fmri', label: 'fMRI · time-series' + tlabel }
+  }
+  // slice panes — switch FS.nv to a single slice type, capture, restore.
+  const TYPE = { axial: 0, coronal: 1, sagittal: 2 }
+  const NAME = { axial: 'Axial', coronal: 'Coronal', sagittal: 'Sagittal' }
+  const t = TYPE[pane]
+  if (t == null || !FS.nv || !FS.ready) return null
+  const prev = FS.nv.opts.sliceType
+  try {
+    FS.nv.setSliceType(t); FS.nv.drawScene()
+    const url = document.getElementById('fmriSlices').toDataURL('image/png')
+    if (!url || url.length < 200) return null
+    return { url, tab: 'fmri', label: 'fMRI · ' + NAME[pane] + ' slice' + tlabel }
+  } catch (e) {
+    console.error(e); return null
+  } finally {
+    FS.nv.setSliceType(prev); FS.nv.drawScene()
+  }
 }
+// Back-compat: plain fMRI capture = the 3-D brain.
+window.__captureFmri = function () { return window.__captureFmriPane('brain') }
 
 const VP = (() => {
   const items = []                       // { id, url, tab, label }
@@ -2554,8 +2594,10 @@ const VP = (() => {
   const els = {
     panel: $('viewPanel'), header: $('vpHeader'), collapse: $('vpCollapse'),
     list: $('vpList'), empty: $('vpEmpty'), count: $('vpCount'),
-    add: $('vpAdd'), save: $('vpSave'), clear: $('vpClear'),
+    add: $('vpAdd'), menu: $('vpMenu'), save: $('vpSave'), clear: $('vpClear'),
     cols: $('vpCols'), labels: $('vpLabels'), status: $('vpStatus'),
+    arrangeBtn: $('vpArrangeBtn'), arrange: $('vpArrange'), aGrid: $('vpaGrid'),
+    aCols: $('vpaCols'), aLabels: $('vpaLabels'), aClose: $('vpaClose'), aSave: $('vpaSave'),
   }
 
   function status(msg, kind = '') {
@@ -2570,18 +2612,58 @@ const VP = (() => {
     return b ? b.dataset.tab : 'figure'
   }
 
-  function capture() {
-    const tab = activeTab()
-    const fn = { figure: window.__captureFigure, explore: window.__captureExplore, fmri: window.__captureFmri }[tab]
-    if (!fn) { status('This tab isn’t ready yet', 'err'); return }
+  // Which individual views can be picked off each tab. Each entry is
+  // [menu label, () => shot]; the getter returns { url, tab, label } or null.
+  const VIEW_MENU = {
+    figure: [
+      ['All four views', () => window.__captureFigurePane('multi')],
+      ['Axial slice',    () => window.__captureFigurePane('axial')],
+      ['Sagittal slice', () => window.__captureFigurePane('sagittal')],
+      ['Coronal slice',  () => window.__captureFigurePane('coronal')],
+      ['3D render',      () => window.__captureFigurePane('render')],
+    ],
+    explore: [
+      ['Advanced 3-D view', () => window.__captureExplore()],
+    ],
+    fmri: [
+      ['3D brain',          () => window.__captureFmriPane('brain')],
+      ['Time-series graph', () => window.__captureFmriPane('graph')],
+      ['Axial slice',       () => window.__captureFmriPane('axial')],
+      ['Sagittal slice',    () => window.__captureFmriPane('sagittal')],
+      ['Coronal slice',     () => window.__captureFmriPane('coronal')],
+    ],
+  }
+
+  function addShot(getShot, name) {
     let shot
-    try { shot = fn() } catch (e) { console.error(e); shot = null }
-    if (!shot || !shot.url) { status('Capture failed — let the view finish loading', 'err'); return }
+    try { shot = getShot() } catch (e) { console.error(e); shot = null }
+    if (!shot || !shot.url) { status('Couldn’t capture ' + name + ' — let the view finish loading', 'err'); return }
     items.push({ id: 'v' + Date.now() + Math.random().toString(36).slice(2, 6), ...shot })
     render()
-    status('Added ' + (TAB_NAMES[tab] || tab) + ' view', 'ok')
-    // keep newest in view
+    status('Added ' + name, 'ok')
     els.list.lastElementChild && els.list.lastElementChild.scrollIntoView({ block: 'nearest' })
+  }
+
+  // ── "Add view ▾" menu: lists the views available on the current tab ──
+  function onDocDownForMenu(e) {
+    if (!els.menu.contains(e.target) && e.target !== els.add) closeAddMenu()
+  }
+  function closeAddMenu() {
+    els.menu.hidden = true
+    document.removeEventListener('mousedown', onDocDownForMenu)
+  }
+  function toggleAddMenu() {
+    if (!els.menu.hidden) { closeAddMenu(); return }
+    const views = VIEW_MENU[activeTab()] || VIEW_MENU.figure
+    els.menu.innerHTML = ''
+    views.forEach(([label, getShot]) => {
+      const b = document.createElement('button')
+      b.type = 'button'; b.className = 'vp-menu-item'; b.textContent = label
+      b.onclick = () => { closeAddMenu(); addShot(getShot, label) }
+      els.menu.appendChild(b)
+    })
+    els.menu.hidden = false
+    setTimeout(() => document.addEventListener('mousedown', onDocDownForMenu), 0)
   }
 
   function removeItem(id) {
@@ -2593,8 +2675,10 @@ const VP = (() => {
     els.count.textContent = '(' + items.length + ')'
     els.empty.style.display = items.length ? 'none' : ''
     els.save.disabled = els.clear.disabled = items.length === 0
+    if (els.arrangeBtn) els.arrangeBtn.disabled = items.length === 0
     els.list.innerHTML = ''
     items.forEach(it => els.list.appendChild(itemEl(it)))
+    if (els.arrange && els.arrange.classList.contains('active')) renderArrange()
   }
 
   function itemEl(it) {
@@ -2719,9 +2803,66 @@ const VP = (() => {
     status('Saved ' + cols + '×' + rows + ' panel', 'ok')
   }
 
+  // ══ Arrange view — WYSIWYG grid of the final panel, drag tiles to reorder ══
+  function colsValue() {
+    const n = items.length || 1
+    let c = els.cols.value === 'auto' ? Math.ceil(Math.sqrt(n)) : parseInt(els.cols.value, 10)
+    return Math.max(1, Math.min(c, n))
+  }
+  function renderArrange() {
+    if (!els.aGrid) return
+    const cols = colsValue()
+    els.aGrid.style.gridTemplateColumns = 'repeat(' + cols + ', 1fr)'
+    els.aGrid.innerHTML = ''
+    items.forEach((it, i) => els.aGrid.appendChild(arrangeTile(it, i)))
+  }
+  function arrangeTile(it, i) {
+    const cell = document.createElement('div')
+    cell.className = 'vpa-cell'; cell.dataset.id = it.id; cell.draggable = true
+    const img = document.createElement('img'); img.src = it.url; img.alt = it.label; img.draggable = false
+    cell.appendChild(img)
+    if (els.aLabels.checked) {
+      const cap = document.createElement('div'); cap.className = 'vpa-cap'; cap.textContent = it.label
+      cell.appendChild(cap)
+    }
+    const num = document.createElement('span'); num.className = 'vpa-num'; num.textContent = i + 1
+    cell.appendChild(num)
+    cell.addEventListener('dragstart', e => { dragId = it.id; cell.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move' })
+    cell.addEventListener('dragend', () => { dragId = null; cell.classList.remove('dragging'); els.aGrid.querySelectorAll('.drag-over').forEach(n => n.classList.remove('drag-over')) })
+    cell.addEventListener('dragover', e => { e.preventDefault(); if (dragId && dragId !== it.id) cell.classList.add('drag-over') })
+    cell.addEventListener('dragleave', () => cell.classList.remove('drag-over'))
+    cell.addEventListener('drop', e => {
+      e.preventDefault(); cell.classList.remove('drag-over')
+      if (!dragId || dragId === it.id) return
+      const from = items.findIndex(x => x.id === dragId)
+      const to = items.findIndex(x => x.id === it.id)
+      if (from < 0 || to < 0) return
+      items.splice(to, 0, items.splice(from, 1)[0])
+      render(); renderArrange()
+    })
+    return cell
+  }
+  function openArrange() {
+    if (!items.length) { status('Add some views first', 'err'); return }
+    els.aCols.value = els.cols.value
+    els.aLabels.checked = els.labels.checked
+    renderArrange()
+    els.arrange.classList.add('active')
+  }
+  function closeArrange() { els.arrange.classList.remove('active') }
+
   // ── Wire up controls ──
-  els.add.onclick = capture
+  els.add.onclick = toggleAddMenu
   els.save.onclick = save
+  if (els.arrangeBtn) els.arrangeBtn.onclick = openArrange
+  if (els.arrange) {
+    els.aClose.onclick = closeArrange
+    els.aSave.onclick = save                       // save() reads the (synced) panel cols/labels
+    els.aCols.onchange = () => { els.cols.value = els.aCols.value; renderArrange() }
+    els.aLabels.onchange = () => { els.labels.checked = els.aLabels.checked; renderArrange() }
+    els.arrange.addEventListener('mousedown', e => { if (e.target === els.arrange) closeArrange() })
+    document.addEventListener('keydown', e => { if (e.key === 'Escape' && els.arrange.classList.contains('active')) closeArrange() })
+  }
   els.clear.onclick = () => { if (items.length && confirm('Clear all captured views?')) { items.length = 0; render() } }
   els.collapse.onclick = () => {
     const c = els.panel.classList.toggle('collapsed')
@@ -2750,5 +2891,5 @@ const VP = (() => {
   })()
 
   render()
-  return { capture }
+  return { addMenu: toggleAddMenu, arrange: openArrange }
 })()
