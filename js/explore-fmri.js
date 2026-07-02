@@ -635,9 +635,18 @@ function applyHighlight() {
     mat.opacity = op
     mat.transparent = op < 1
     mat.depthWrite = op >= 1                  // translucent → don't occlude (see-through)
-    const glassy = !focus && u.opacity < 1    // glossy sheen for real glass, not focus-dimming
-    mat.shininess = glassy ? 80 : 8
-    mat.specular.setHex(glassy ? 0x5a6b7d : 0x111111)
+    const glassy = !focus && u.opacity < 1    // real per-region glass, not focus-dimming
+    // Glass = a hollow, see-through shell: render both faces (three does a proper
+    // back-then-front pass for double-sided transparent mats) so the far wall of
+    // the blob shows through, reading as volume rather than a thin translucent cap.
+    // DOUBLE_SIDED is a compile-time #define + program-cache key, so flag a shader
+    // rebuild only when the side actually flips (not every slider tick).
+    const side = glassy ? THREE.DoubleSide : THREE.FrontSide
+    if (mat.side !== side) { mat.side = side; mat.needsUpdate = true }
+    // Keep the sheen faint. A strong specular hotspot adds light on top and reads
+    // as polished *solid* plastic, masking the transparency instead of selling it.
+    mat.shininess = glassy ? 24 : 8
+    mat.specular.setHex(glassy ? 0x223140 : 0x111111)
     mat.emissive.setHex(isSel ? 0x2554b0 : (hovered && r.mesh === hovered ? 0x444a55 : 0x000000))
   }
   needsRender = true
