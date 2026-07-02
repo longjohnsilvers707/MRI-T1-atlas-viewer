@@ -22,7 +22,7 @@
 ">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Brain Atlas Viewer</title>
-<link rel="stylesheet" href="/css/styles.css">
+<link rel="stylesheet" href="./css/styles.css">
 </head>
 <body>
 <div id="app">
@@ -209,7 +209,12 @@
 
   <!-- Export CLI command -->
   <div id="exportCliPanel">
-    <div class="label-xs">Export</div>
+    <div class="label-xs">Export &amp; share</div>
+    <button id="btnShareLink" class="btn-primary" title="Copy a URL that reproduces this exact figure — atlas, regions, colours, slices and display settings">🔗 Copy shareable link</button>
+    <div class="file-hint" style="margin:5px 0 8px;">
+      Bundles the whole figure into a link. Open it (or just refresh) to get this
+      view back — great for sharing a figure with a collaborator.
+    </div>
     <button id="btnExportCli">Export CLI command</button>
     <div id="cliAtlasNote" style="display:none;font-size:10px;color:#e3b341;margin-top:5px;line-height:1.4;">
       3D mesh rendering requires AAL/AAL3 atlas. Slice panels export correctly for any atlas.
@@ -454,8 +459,24 @@
 
     <div id="exploreToolbar">
       <button class="overlay-btn" id="exLearn" title="Learn mode — click a region to see what it does">Learn</button>
+      <button class="overlay-btn" id="exQuiz" title="Quiz mode — test yourself by finding regions in the 3-D brain">Quiz</button>
       <button class="overlay-btn" id="exReset">Reset view</button>
       <button class="overlay-btn" id="exScreenshot">Save PNG</button>
+    </div>
+
+    <!-- Quiz panel — floats top-centre while Quiz mode is on -->
+    <div id="quizPanel" hidden>
+      <div class="quiz-scorebar">
+        <span class="quiz-score" id="quizScore">0 / 0</span>
+        <span class="quiz-streak" id="quizStreak"></span>
+        <button class="quiz-x" id="quizEnd" title="End quiz">✕</button>
+      </div>
+      <div class="quiz-prompt" id="quizPrompt">Loading…</div>
+      <div class="quiz-feedback" id="quizFeedback"></div>
+      <div class="quiz-actions">
+        <button id="quizSkip">Skip</button>
+        <button id="quizNext" class="btn-primary" hidden>Next question →</button>
+      </div>
     </div>
 
     <div id="exGizmo"><canvas id="glGizmo"></canvas></div>
@@ -731,9 +752,9 @@
   </div>
 </div>
 
-<script src="/js/bootstrap.js"></script>
+<script src="./js/bootstrap.js"></script>
 
-<script type="module" src="/js/viewer.js"></script>
+<script type="module" src="./js/viewer.js"></script>
 
 <!-- ═══════════════════════════════════════════════════════════════════════
      EXPLORE TAB  —  interactive Three.js brain (explode / highlight / networks)
@@ -742,6 +763,6 @@
      the NiiVue module above (which uses top-level await). Three.js is pulled in
      lazily via dynamic import(), which works fine in a classic script.
      ═══════════════════════════════════════════════════════════════════════ -->
-<script src="/js/explore-fmri.js"></script>
+<script src="./js/explore-fmri.js"></script>
 </body>
 </html>
