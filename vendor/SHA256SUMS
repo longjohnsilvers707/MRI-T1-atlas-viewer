@@ -1,7 +1,9 @@
+044e36e6ca1c05be72efd7f8559a7adbed06fcb0092dde64cd365cfc3e61ba49  ./README.md
 71f3ce5c5d9d0db1208937f55fa35b9970ce63c1a24753cf74c471fe9a3c27eb  ./brainchop/model5_gw_ae/colormap3.json
 ca0d1b8ff72f8719d9525acaf9a1f1cb66dbb173b4ee1d7540f99e022cf4bfd8  ./brainchop/model5_gw_ae/group1-shard1of1.bin
 7aabd59933bd3528f120107165f5dd577c5b749cf91fc2f949987d7bc620ce59  ./brainchop/model5_gw_ae/model.json
 d6c2be4feb1ad53b2ac76b4196da8d8fd2263b662b511c55ca0fd127eb6a6532  ./niivue/index.js
+691bbec0ef8b5a7f17f212e9c5d85832030f90d030b46e99acb4dea1fb16f009  ./tfjs/tf-backend-wasm.min.js
 300dfae273d20b4046f46a06d735688f03675a807561e9bcb5f664eb2f3d2831  ./tfjs/tf.min.js
 77ebb28a6d34f371dbbf2086b7f2de8994acd8ea5a3cf1fa24d2c26c840cac7b  ./tfjs/tfjs-backend-wasm-simd.wasm
 c052228d4bef185c27bbe59a9e029570c78bbb9f08b3cb46b597851650373de2  ./tfjs/tfjs-backend-wasm-threaded-simd.wasm

@@ -16,6 +16,7 @@ from urllib.parse import urlparse, unquote
 APP_DIR    = os.path.dirname(os.path.abspath(__file__))
 CACHE_DIR  = os.path.join(APP_DIR, "cache")
 LABELS_DIR = os.path.join(APP_DIR, "labels")
+VENDOR_DIR = os.path.join(APP_DIR, "vendor")
 PORT       = 8765
 
 # Atlas NIfTI files cached on disk (downloaded from GitHub on first run)
@@ -178,6 +179,14 @@ class AtlasHandler(SimpleHTTPRequestHandler):
         ".gz":     "application/gzip",     # covers .nii.gz
         ".mz3":    "application/octet-stream",
         ".json":   "application/json",
+        # Pin these so serving the locally vendored libraries never depends on
+        # the host's mimetypes registry (varies on Windows/minimal installs).
+        # ESM import() needs a JS type; the TF.js WASM backend needs exactly
+        # application/wasm for streaming compilation — a wrong type makes the
+        # local copy fail and silently fall back to a CDN.
+        ".js":     "text/javascript",
+        ".mjs":    "text/javascript",
+        ".wasm":   "application/wasm",
     }
 
     def __init__(self, *args, **kwargs):
@@ -346,6 +355,36 @@ class AtlasHandler(SimpleHTTPRequestHandler):
             sys.stderr.write(f"[{self.address_string()}] {fmt % args}\n")
 
 
+def check_vendor_complete():
+    """Warn loudly if any pinned third-party library listed in
+    vendor/SHA256SUMS is missing on disk. A missing vendored file makes the
+    front-end silently fall back to a public CDN at runtime (the WASM backend
+    JS did exactly this), which breaks the "everything served locally" goal.
+    Print-only: never blocks startup. Run `bash scripts/fetch_vendor.sh` to
+    restore anything reported here."""
+    manifest = os.path.join(VENDOR_DIR, "SHA256SUMS")
+    if not os.path.isfile(manifest):
+        print("  Vendor libs : SHA256SUMS not found (skipping local-asset check)")
+        return
+    missing = []
+    with open(manifest) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            # "<sha>  ./relative/path" — split off the path after the digest.
+            rel = line.split(None, 1)[1].lstrip("./") if len(line.split(None, 1)) == 2 else ""
+            if rel and not os.path.isfile(os.path.join(VENDOR_DIR, rel)):
+                missing.append(rel)
+    if missing:
+        print("  Vendor libs : WARNING - missing local copies (runtime will fall back to a CDN):")
+        for rel in missing:
+            print(f"                - vendor/{rel}")
+        print("                Run: bash scripts/fetch_vendor.sh")
+    else:
+        print("  Vendor libs : all local (no runtime CDN needed)")
+
+
 def main():
     # Download atlas files before starting
     prefetch_atlas_files()
@@ -358,6 +397,7 @@ def main():
     print(f"Brain Atlas Viewer  ->  {url}")
     print(f"  Atlas labels : {LABELS_DIR}")
     print(f"  NIfTI cache  : {CACHE_DIR}")
+    check_vendor_complete()
     print("Press Ctrl+C to stop.\n")
 
     def open_browser():
