@@ -267,9 +267,18 @@ async function initExplore() {
   try {
     msg.textContent = 'Loading 3D engine…'
     THREE = await importThree()
-    msg.textContent = 'Fetching brain meshes…'
-    const bundle = await getBundle()
+    // First init with a queued subject bundle if one is waiting; otherwise the
+    // reference atlas (cached for later "back to atlas").
+    let bundle
+    if (_pendingSubject) {
+      bundle = _pendingSubject; _pendingSubject = null
+      _subjectSource = bundle._srcLabel || 'Your brain'
+    } else {
+      msg.textContent = 'Fetching brain meshes…'
+      bundle = await getBundle(); _atlasBundle = bundle
+    }
     buildScene(bundle)
+    updateSourceBanner()
     document.getElementById('exploreLoading').classList.remove('active')
     startAnim()
   } catch (e) {
@@ -478,6 +487,36 @@ function buildScene(bundle) {
   raycaster = new THREE.Raycaster(); pointer = new THREE.Vector2(); tmp = new THREE.Vector3()
   orb.target = new THREE.Vector3(0, 0, 0)
 
+  populateRegions(bundle)
+  initOrbit(canvas)
+  buildGizmo()
+  setupUI()
+  applyColors()
+  applyExplode()
+
+  new ResizeObserver(() => resize()).observe(document.getElementById('exploreViewer'))
+  resize()
+}
+
+// Build region meshes + connectome from a bundle. Safe to call again to swap the
+// whole scene to a different bundle (atlas ↔ subject): it disposes the previous
+// meshes/tracts/arcs and rebuilds. UI event wiring (setupUI) stays one-time; the
+// data-dependent lists are re-rendered by reloadBundle.
+function populateRegions(bundle) {
+  // Tear down anything from a previous bundle.
+  clearArcs()
+  disposeTracts()
+  for (const rec of regions) {
+    const full = rec.mesh.userData && rec.mesh.userData.fullGeo
+    if (full && full !== rec.mesh.geometry) full.dispose()
+    rec.mesh.geometry.dispose()
+    if (rec.mesh.material) rec.mesh.material.dispose()
+    brain.remove(rec.mesh)
+  }
+  regions.length = 0
+  byIndex.clear()
+  selected = null; hovered = null
+
   for (const r of bundle.regions) {
     const geo = new THREE.BufferGeometry()
     geo.setAttribute('position', new THREE.BufferAttribute(b64decode(r.positions, Float32Array), 3))
@@ -509,14 +548,83 @@ function buildScene(bundle) {
 
   applyMeshLOD(regions, MESH_QFRAC[meshQuality])
   buildConnectome()
-  initOrbit(canvas)
-  buildGizmo()
-  setupUI()
-  applyColors()
-  applyExplode()
+}
 
-  new ResizeObserver(() => resize()).observe(document.getElementById('exploreViewer'))
-  resize()
+// Dispose every connection arc and reset arc state (used on bundle swap).
+function clearArcs() {
+  for (const a of arcs) {
+    if (a._obj) { if (arcGroup) arcGroup.remove(a._obj); disposeArcObj(a._obj) }
+    if (a._mat) a._mat.dispose()
+  }
+  arcs = []; arcSeq = 0; selectedArc = null
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  SUBJECT BUNDLE HAND-OFF  (from the segmentation tab → this explode view)
+// ═══════════════════════════════════════════════════════════════════════
+// viewer.js segments an uploaded T1, turns the labelled volume into a bundle
+// (js/subject-mesh.js) and calls window.loadSubjectExploded(bundle). The bundle
+// has the identical shape as the atlas bundle, so the whole explode/colour/
+// isolate machinery works unchanged.
+let _atlasBundle = null       // reference-atlas bundle, cached for "back to atlas"
+let _pendingSubject = null    // subject bundle awaiting first-time init
+let _subjectSource = null     // label for the source banner (or null = atlas)
+
+function loadSubjectExploded(bundle, opts) {
+  opts = opts || {}
+  _pendingSubject = bundle
+  _pendingSubject._srcLabel = opts.title
+    ? `Your brain · ${opts.mode === 'advanced' ? 'parcellation' : 'tissue'} · ${opts.title}`
+    : 'Your brain'
+  if (exploreInited) { applyPendingSubject() }
+  else { switchTab('explore') }   // initExplore() will pick up _pendingSubject
+}
+
+// Apply a queued subject bundle to an already-initialised scene.
+function applyPendingSubject() {
+  const bundle = _pendingSubject; _pendingSubject = null
+  if (!bundle) return
+  _subjectSource = bundle._srcLabel || 'Your brain'
+  reloadBundle(bundle)
+  switchTab('explore')
+  updateSourceBanner()
+}
+
+// Swap the live scene to a different bundle and refresh all data-driven UI.
+function reloadBundle(bundle) {
+  selectMesh(null)
+  groupHidden.clear()
+  // A subject bundle with only midline ('M') hemispheres reads best by lobe.
+  if (bundle.meta && bundle.meta.atlas === 'subject' &&
+      !bundle.regions.some(r => r.hemisphere === 'L' || r.hemisphere === 'R')) {
+    colorBy = 'lobe'
+    const cb = document.getElementById('exColorBy'); if (cb) cb.value = 'lobe'
+  }
+  populateRegions(bundle)
+  populateArcDropdowns()
+  applyColors(); applyVisibility(); applyExplode()
+  renderGroups(); renderRegionList(); renderArcList()
+  resetView()
+  needsRender = true
+}
+
+// Reload the reference atlas (fetched + cached lazily). Clears subject mode.
+function backToAtlas() {
+  const done = b => { _atlasBundle = b; _subjectSource = null; reloadBundle(b); updateSourceBanner() }
+  if (_atlasBundle) { done(_atlasBundle); return }
+  getBundle().then(done).catch(e => exToast('Could not load atlas: ' + (e.message || e), 'err'))
+}
+
+// Small banner shown over the explode viewer while a subject brain is loaded.
+function updateSourceBanner() {
+  const el = document.getElementById('exSourceBanner')
+  if (!el) return
+  if (_subjectSource) {
+    el.hidden = false
+    el.querySelector('.ex-src-label').textContent = _subjectSource
+  } else {
+    el.hidden = true
+  }
 }
 
 function resize() {
@@ -1284,6 +1392,8 @@ function setupUI() {
   document.getElementById('exNone').onclick = () => { filtered().forEach(r => (r.mesh.userData.userVisible = false)); applyVisibility(); renderRegionList() }
   document.getElementById('exClearSel').onclick = () => selectMesh(null)
   document.getElementById('exReset').onclick = () => resetView()
+  const back = document.getElementById('exBackToAtlas')
+  if (back) back.onclick = () => backToAtlas()
   document.getElementById('exScreenshot').onclick = () => savePNG()
   document.getElementById('exLearn').onclick = () => setLearnMode(!learnMode)
   document.getElementById('learnClose').onclick = () => setLearnMode(false)

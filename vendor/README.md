@@ -21,7 +21,8 @@ Regenerate everything with:
 | three.js | `0.160.0` (ESM) | `three/three.module.js` |
 | TensorFlow.js core | `4.22.0` (UMD) | `tfjs/tf.min.js` |
 | TensorFlow.js WASM backend | `4.22.0` | `tfjs/tf-backend-wasm*.{js,wasm}` |
-| brainchop model `model5_gw_ae` | commit `4c87885f3a2a8835e260d521dcec922b58d91d41` | `brainchop/model5_gw_ae/*` |
+| brainchop model `model5_gw_ae` (3-class GM/WM tissue) | commit `4c87885f3a2a8835e260d521dcec922b58d91d41` | `brainchop/model5_gw_ae/*` |
+| brainchop model `model30chan50cls` (50-class DKT parcellation) | commit `4c87885f3a2a8835e260d521dcec922b58d91d41` | `brainchop/model30chan50cls/*` |
 
 The brainchop commit SHA and the version constants are duplicated in
 `index.html` (`BC_MODEL_BASE`, `TFJS_VER`) and `scripts/fetch_vendor.sh`; keep

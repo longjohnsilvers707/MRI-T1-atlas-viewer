@@ -684,6 +684,84 @@ let _tf = null, _bcModel = null, _segBusy = false
 let _segBackend = 'n/a'   // which TF.js backend inference actually ran on
 let _bcLabels = ['background', 'White Matter', 'Grey Matter']   // colormap3.json order
 
+// ── Advanced tier: 50-class DKT parcellation (brainchop model30chan50cls) ──
+// Same conform/normalize pipeline as the fast tissue model, but 50 output
+// classes (cortical DKT regions + subcortical structures). Vendored locally
+// (scripts/fetch_vendor.sh). MeshNet is fully convolutional, so we run it on a
+// cropped brain bounding box (see runSegmentation) to keep the 50-channel
+// logits from exhausting GPU memory.
+const BC_PARC_BASE = './vendor/brainchop/model30chan50cls'
+let _bcParcModel = null
+let _parcLabels  = null   // 50 class names from colormap.json
+let _parcColors  = null   // [[r,g,b], …] per class from colormap.json
+
+// FreeSurfer/DKT label → { lobe, network } for the explode view's grouping and
+// colouring. Lobe keys reuse LOBE_COLORS in explore-fmri.js; network keys reuse
+// NETWORK_COLORS. Anything unmapped falls back to Other (rendered grey).
+const FS_TAXO = {
+  'Cerebral-White-Matter': { lobe: 'White matter', network: 'Other' },
+  'Ventricle':             { lobe: 'Other',        network: 'Other' },
+  'Cerebellum-White-Matter': { lobe: 'Cerebellum', network: 'Cerebellar' },
+  'Cerebellum':            { lobe: 'Cerebellum',   network: 'Cerebellar' },
+  'Thalamus-Proper*':      { lobe: 'Subcortical',  network: 'Subcortical' },
+  'Caudate':               { lobe: 'Subcortical',  network: 'Subcortical' },
+  'Putamen':               { lobe: 'Subcortical',  network: 'Subcortical' },
+  'Pallidum':              { lobe: 'Subcortical',  network: 'Subcortical' },
+  'Brain-Stem':            { lobe: 'Subcortical',  network: 'Brainstem' },
+  'Hippocampus':           { lobe: 'Limbic',       network: 'Limbic' },
+  'Amygdala':              { lobe: 'Limbic',       network: 'Limbic' },
+  'CSF':                   { lobe: 'Other',        network: 'Other' },
+  'Accumbens-area':        { lobe: 'Subcortical',  network: 'Subcortical' },
+  'VentralDC':             { lobe: 'Subcortical',  network: 'Subcortical' },
+  'Corpus callosum':       { lobe: 'White matter', network: 'Other' },
+  'ctx-bankssts':          { lobe: 'Temporal',     network: 'Other' },
+  'ctx-caudalanteriorcingulate': { lobe: 'Limbic', network: 'DefaultMode' },
+  'ctx-caudalmiddlefrontal': { lobe: 'Frontal',    network: 'Frontoparietal' },
+  'ctx-cuneus':            { lobe: 'Occipital',    network: 'Visual' },
+  'ctx-entorhinal':        { lobe: 'Limbic',       network: 'Limbic' },
+  'ctx-fusiform':          { lobe: 'Temporal',     network: 'Visual' },
+  'ctx-inferiorparietal':  { lobe: 'Parietal',     network: 'Frontoparietal' },
+  'ctx-inferiortemporal':  { lobe: 'Temporal',     network: 'Other' },
+  'ctx-isthmuscingulate':  { lobe: 'Limbic',       network: 'DefaultMode' },
+  'ctx-lateraloccipital':  { lobe: 'Occipital',    network: 'Visual' },
+  'ctx-lateralorbitofrontal': { lobe: 'Frontal',   network: 'Limbic' },
+  'ctx-lingual':           { lobe: 'Occipital',    network: 'Visual' },
+  'ctx-medialorbitofrontal': { lobe: 'Frontal',    network: 'DefaultMode' },
+  'ctx-middletemporal':    { lobe: 'Temporal',     network: 'DefaultMode' },
+  'ctx-parahippocampal':   { lobe: 'Limbic',       network: 'Limbic' },
+  'ctx-paracentral':       { lobe: 'Frontal',      network: 'Somatomotor' },
+  'ctx-parsopercularis':   { lobe: 'Frontal',      network: 'Frontoparietal' },
+  'ctx-parsorbitalis':     { lobe: 'Frontal',      network: 'Frontoparietal' },
+  'ctx-parstriangularis':  { lobe: 'Frontal',      network: 'Frontoparietal' },
+  'ctx-pericalcarine':     { lobe: 'Occipital',    network: 'Visual' },
+  'ctx-postcentral':       { lobe: 'Parietal',     network: 'Somatomotor' },
+  'ctx-posteriorcingulate': { lobe: 'Limbic',      network: 'DefaultMode' },
+  'ctx-precentral':        { lobe: 'Frontal',      network: 'Somatomotor' },
+  'ctx-precuneus':         { lobe: 'Parietal',     network: 'DefaultMode' },
+  'ctx-rostralanteriorcingulate': { lobe: 'Limbic', network: 'DefaultMode' },
+  'ctx-rostralmiddlefrontal': { lobe: 'Frontal',   network: 'Frontoparietal' },
+  'ctx-superiorfrontal':   { lobe: 'Frontal',      network: 'DefaultMode' },
+  'ctx-superiorparietal':  { lobe: 'Parietal',     network: 'DorsalAttention' },
+  'ctx-superiortemporal':  { lobe: 'Temporal',     network: 'Other' },
+  'ctx-supramarginal':     { lobe: 'Parietal',     network: 'Frontoparietal' },
+  'ctx-frontalpole':       { lobe: 'Frontal',      network: 'Frontoparietal' },
+  'ctx-temporalpole':      { lobe: 'Temporal',     network: 'Limbic' },
+  'ctx-transversetemporal': { lobe: 'Temporal',    network: 'Somatomotor' },
+  'ctx-insula':            { lobe: 'Limbic',       network: 'Salience' },
+}
+// Parcellation labels that are truly midline — keep them as one region rather
+// than splitting L/R by the mid-sagittal plane.
+const FS_MIDLINE = new Set([9 /*Brain-Stem*/, 15 /*Corpus callosum*/])
+
+function prettyFS(name) {
+  const s = String(name).replace(/^ctx-/, '').replace(/[-_]/g, ' ').replace(/\*/g, '').trim()
+  return s.charAt(0).toUpperCase() + s.slice(1)
+}
+
+// Last completed subject segmentation, kept so "Explode this brain" can build
+// meshes on demand without re-running inference. { labData, dims, mode, fname }.
+let _lastSeg = null
+
 function loadScript(src) {
   return new Promise((res, rej) => {
     const s = document.createElement('script')
@@ -752,14 +830,31 @@ async function loadBcLabels() {
   } catch (e) { /* keep fallback labels */ }
 }
 
-async function runSegmentation(file) {
+async function loadParcModel() {
+  if (!_bcParcModel) _bcParcModel = await _tf.loadLayersModel(BC_PARC_BASE + '/model.json')
+  return _bcParcModel
+}
+async function loadParcColormap() {
+  if (_parcLabels) return
+  const r = await fetch(BC_PARC_BASE + '/colormap.json')
+  if (!r.ok) throw new Error('parcellation colormap not found (run scripts/fetch_vendor.sh)')
+  const j = await r.json()
+  _parcLabels = j.labels
+  _parcColors = j.labels.map((_, i) => [j.R[i], j.G[i], j.B[i]])
+}
+
+// mode: 'basic' → 3-class GM/WM tissue (model5_gw_ae, fast, whole-volume);
+//       'advanced' → 50-class DKT parcellation (model30chan50cls, cropped).
+async function runSegmentation(file, mode) {
   if (_segBusy) return
   if (typeof nv.conform !== 'function') {
     toast('This NiiVue build lacks conform(); cannot segment', 'err'); return
   }
+  mode = mode === 'advanced' ? 'advanced' : 'basic'
   _segBusy = true
   document.getElementById('btnSegment').disabled = true
-  diag('info', 'segmentation start', file.name, file.size + ' bytes')
+  setExplodeButton(false)
+  diag('info', 'segmentation start', mode, file.name, file.size + ' bytes')
   try {
     showLoading('Reading T1…')
     const nvImg = await NVImage.loadFromFile({ file, name: file.name })
@@ -771,8 +866,9 @@ async function runSegmentation(file) {
     const conf = await nv.conform(nvImg, true)
     const src = conf.img
     const nvox = src.length
+    const side = Math.round(Math.cbrt(nvox))     // 256
 
-    // min–max intensity normalization to 0..1 (expected by the _ae model)
+    // min–max intensity normalization to 0..1 (expected by the _ae/parc models)
     showLoading('Preparing input…')
     let mn = Infinity, mx = -Infinity
     for (let i = 0; i < nvox; i++) { const v = src[i]; if (v < mn) mn = v; if (v > mx) mx = v }
@@ -782,41 +878,100 @@ async function runSegmentation(file) {
 
     showLoading('Loading segmentation model…')
     await loadTF()
-    await loadBcModel()
-    await loadBcLabels()
-
     const cpuMode = _segBackend !== 'webgl'
-    showLoading(`Running segmentation (${_segBackend})…` + (cpuMode ? ' — CPU mode, this can take a while' : ''))
-    diag('info', 'inference begin', 'backend=' + _segBackend, 'voxels=' + nvox)
-    await new Promise(r => setTimeout(r, 30))   // let the overlay paint first
 
+    let labData, labels, colorFn
     const t0 = performance.now()
-    const side = Math.round(Math.cbrt(nvox))     // 256
-    const labelsT = _tf.tidy(() => {
-      const input = _tf.tensor(f, [1, side, side, side, 1])
-      const out = _bcModel.predict(input)
-      return (Array.isArray(out) ? out[0] : out).argMax(-1)   // [1,s,s,s] class ids
-    })
-    const labData = await labelsT.data()
-    labelsT.dispose()
-    diag('info', 'inference done', Math.round(performance.now() - t0) + ' ms')
+    if (mode === 'basic') {
+      await loadBcModel(); await loadBcLabels()
+      showLoading(`Running segmentation (${_segBackend})…` + (cpuMode ? ' — CPU mode, this can take a while' : ''))
+      diag('info', 'inference begin', 'basic', 'backend=' + _segBackend, 'voxels=' + nvox)
+      await new Promise(r => setTimeout(r, 30))   // let the overlay paint first
+      const labelsT = _tf.tidy(() => {
+        const input = _tf.tensor(f, [1, side, side, side, 1])
+        const out = _bcModel.predict(input)
+        return (Array.isArray(out) ? out[0] : out).argMax(-1)   // [1,s,s,s] class ids
+      })
+      const raw = await labelsT.data(); labelsT.dispose()
+      labData = new Uint8Array(raw)                 // 0 bg / 1 WM / 2 GM
+      labels = _bcLabels; colorFn = (c, name) => segColorFor(name)
+    } else {
+      await loadParcModel(); await loadParcColormap()
+      // Fully-convolutional MeshNet: crop to the head bounding box so the
+      // 50-channel logit tensor stays small enough for the GPU. The surrounding
+      // air is zero in both the full and cropped volume, so the padding context
+      // — and thus the labels inside the brain — is unchanged by the crop.
+      const bb = intensityBBox(f, side, 0.02, 4)
+      const dx = bb.x1 - bb.x0 + 1, dy = bb.y1 - bb.y0 + 1, dz = bb.z1 - bb.z0 + 1
+      const crop = new Float32Array(dx * dy * dz)
+      for (let z = bb.z0; z <= bb.z1; z++)
+        for (let y = bb.y0; y <= bb.y1; y++) {
+          const sBase = y * side + z * side * side, cBase = (y - bb.y0) * dx + (z - bb.z0) * dx * dy
+          for (let x = bb.x0; x <= bb.x1; x++) crop[(x - bb.x0) + cBase] = f[x + sBase]
+        }
+      showLoading(`Running parcellation (${_segBackend})…` + (cpuMode ? ' — CPU mode, this can take a while' : ''))
+      diag('info', 'inference begin', 'advanced', 'backend=' + _segBackend, `crop=${dx}x${dy}x${dz}`)
+      await new Promise(r => setTimeout(r, 30))
+      const labelsT = _tf.tidy(() => {
+        const input = _tf.tensor(crop, [1, dz, dy, dx, 1])
+        const out = _bcParcModel.predict(input)
+        return (Array.isArray(out) ? out[0] : out).argMax(-1)   // [1,dz,dy,dx]
+      })
+      const cropLab = await labelsT.data(); labelsT.dispose()
+      // Scatter cropped labels back into the full 256³ grid (background elsewhere)
+      labData = new Uint8Array(nvox)
+      for (let z = bb.z0; z <= bb.z1; z++)
+        for (let y = bb.y0; y <= bb.y1; y++) {
+          const fBase = y * side + z * side * side, cBase = (y - bb.y0) * dx + (z - bb.z0) * dx * dy
+          for (let x = bb.x0; x <= bb.x1; x++) labData[x + fBase] = cropLab[(x - bb.x0) + cBase]
+        }
+      labels = _parcLabels; colorFn = (c) => _parcColors[c] || [170, 170, 170]
+    }
+    diag('info', 'inference done', mode, Math.round(performance.now() - t0) + ' ms')
 
     const counts = {}
     for (let i = 0; i < labData.length; i++) { const c = labData[i]; counts[c] = (counts[c] || 0) + 1 }
 
     showLoading('Rendering segmentation…')
-    displaySegmentation(conf, labData)
+    displaySegmentation(conf, labData, labels, colorFn)
+    _lastSeg = { labData, dims: { x: side, y: side, z: side }, mode, fname: file.name }
     hideLoading()
-    showSegResults(counts, file.name)
+    setExplodeButton(true)
+    if (mode === 'basic') showSegResults(counts, file.name)
+    else showParcResults(counts, file.name)
   } catch (err) {
     hideLoading()
-    diag('error', 'segmentation failed', 'backend=' + _segBackend, err)
+    diag('error', 'segmentation failed', mode, 'backend=' + _segBackend, err)
     const oom = /memory|texture|webgl|out of|alloc/i.test(err.message || '')
     toast('Segmentation failed: ' + (err.message || err) +
-          (oom ? ' (ran out of memory — see Diagnostics)' : ' — see Diagnostics'), 'err')
+          (oom ? ' (ran out of memory' + (mode === 'advanced' ? ' — try Basic mode' : '') + ' — see Diagnostics)' : ' — see Diagnostics'), 'err')
   } finally {
     _segBusy = false
     document.getElementById('btnSegment').disabled = false
+  }
+}
+
+// Bounding box (voxel coords) of voxels above `thresh` in the normalized volume,
+// padded by `margin` and clamped to [0, side). Used to crop parcellation input.
+function intensityBBox(f, side, thresh, margin) {
+  let x0 = side, y0 = side, z0 = side, x1 = 0, y1 = 0, z1 = 0, any = false
+  for (let z = 0; z < side; z++)
+    for (let y = 0; y < side; y++) {
+      const base = y * side + z * side * side
+      for (let x = 0; x < side; x++) {
+        if (f[x + base] > thresh) {
+          any = true
+          if (x < x0) x0 = x; if (x > x1) x1 = x
+          if (y < y0) y0 = y; if (y > y1) y1 = y
+          if (z < z0) z0 = z; if (z > z1) z1 = z
+        }
+      }
+    }
+  if (!any) return { x0: 0, y0: 0, z0: 0, x1: side - 1, y1: side - 1, z1: side - 1 }
+  const cl = v => Math.max(0, Math.min(side - 1, v))
+  return {
+    x0: cl(x0 - margin), y0: cl(y0 - margin), z0: cl(z0 - margin),
+    x1: cl(x1 + margin), y1: cl(y1 + margin), z1: cl(z1 + margin),
   }
 }
 
@@ -827,23 +982,24 @@ function segColorFor(name) {
   return [170, 170, 170]
 }
 
-// NiiVue label LUT (R/G/B/A/I) over the brainchop tissue classes
-function buildSegLUT() {
+// NiiVue label LUT (R/G/B/A/I) over an arbitrary set of segmentation classes.
+// `labelNames[c]` names class c; `colorFn(c, name)` returns its [r,g,b].
+function buildSegLUT(labelNames, colorFn) {
   const R = [], G = [], B = [], A = [], I = [], labels = []
-  for (let c = 0; c < _bcLabels.length; c++) {
-    I.push(c); labels.push(_bcLabels[c] || `Class ${c}`)
-    if (c === 0 || /background/i.test(_bcLabels[c] || '')) {
+  for (let c = 0; c < labelNames.length; c++) {
+    I.push(c); labels.push(labelNames[c] || `Class ${c}`)
+    if (c === 0 || /^(bg|background)$/i.test(labelNames[c] || '')) {
       R.push(0); G.push(0); B.push(0); A.push(0)        // class 0 transparent
     } else {
-      const col = segColorFor(_bcLabels[c] || '')
+      const col = colorFn(c, labelNames[c] || '')
       R.push(col[0]); G.push(col[1]); B.push(col[2]); A.push(255)
     }
   }
   return { R, G, B, A, I, labels }
 }
 
-// Replace the canvas with the conformed T1 + the GM/WM segmentation shaded on top
-function displaySegmentation(conf, labData) {
+// Replace the canvas with the conformed T1 + the segmentation shaded on top
+function displaySegmentation(conf, labData, labelNames, colorFn) {
   try {
     conf.colormap = 'gray'
     conf.opacity = 1
@@ -858,7 +1014,7 @@ function displaySegmentation(conf, labData) {
     ;[...nv.volumes].forEach(v => nv.removeVolume(v))   // drop MNI + atlas
     nv.addVolume(conf)
     nv.addVolume(labVol)
-    labVol.setColormapLabel(buildSegLUT())             // mirror the atlas colormap path
+    labVol.setColormapLabel(buildSegLUT(labelNames, colorFn))   // mirror the atlas colormap path
 
     // Semi-transparent shading so the underlying brain stays visible
     document.getElementById('slAtlasOpacity').value = 60
@@ -926,6 +1082,161 @@ function showSegResults(counts, fname) {
       `\nTotal brain,${brainVox},${cm3(brainVox).toFixed(2)}\n`,
   }))
   openVolModal('Brain volume estimate (rough)')
+}
+
+// Advanced (parcellation) results: total brain volume + the largest regions,
+// plus the prompt to explode the parcellated brain in 3D.
+function showParcResults(counts, fname) {
+  const cm3 = v => v / 1000
+  let brainVox = 0
+  const rows = []
+  for (const c in counts) {
+    const ci = +c
+    if (ci === 0) continue
+    const name = (_parcLabels && _parcLabels[ci]) || `Class ${ci}`
+    brainVox += counts[c]
+    rows.push({ ci, name, vox: counts[c] })
+  }
+  rows.sort((a, b) => b.vox - a.vox)
+  const swatch = ci => {
+    const col = (_parcColors && _parcColors[ci]) || [170, 170, 170]
+    return `<span style="display:inline-block;width:10px;height:10px;border-radius:2px;
+      margin-right:7px;vertical-align:middle;background:rgb(${col.join(',')})"></span>`
+  }
+  document.getElementById('vmContent').innerHTML = `
+    <div class="vm-sub">
+      ${escapeHtml(fname)} · brainchop parcellation (model30chan50cls) · ${rows.length} regions · 1 mm³ voxels.
+      Nothing was uploaded; this ran locally on your GPU. The labelled regions are
+      shaded on your T1 behind this dialog. Use <b>🧠 Explode this brain</b> to pull
+      the regions apart in the Advanced view.
+    </div>
+    <div class="vm-summary">
+      <div class="vm-stat"><div class="k">Regions found</div>
+        <div class="v">${rows.length}</div></div>
+      <div class="vm-stat"><div class="k">Total brain</div>
+        <div class="v">${fmtVol(cm3(brainVox))} <span class="u">cm³</span></div></div>
+    </div>
+    <div class="vm-body"><table class="vol-table">
+      <thead><tr><th>Region</th><th>Voxels</th><th>cm³</th></tr></thead>
+      <tbody>${rows.map(r =>
+        `<tr><td>${swatch(r.ci)}${escapeHtml(prettyFS(r.name))}</td>
+          <td>${r.vox.toLocaleString()}</td><td>${fmtVol(cm3(r.vox))}</td></tr>`).join('')}
+      </tbody>
+      <tfoot><tr class="total-row">
+        <td>Total brain</td><td>${brainVox.toLocaleString()}</td><td>${fmtVol(cm3(brainVox))}</td>
+      </tr></tfoot>
+    </table></div>`
+  setVmCsv(() => ({
+    filename: `parcellation_${fname.replace(/\.(nii|gz)+$/i, '')}.csv`,
+    text: 'Region,Voxels,Volume_cm3\n' +
+      rows.map(r => `"${prettyFS(r.name)}",${r.vox},${cm3(r.vox).toFixed(2)}`).join('\n') +
+      `\nTotal brain,${brainVox},${cm3(brainVox).toFixed(2)}\n`,
+  }))
+  openVolModal('Brain parcellation (50 regions)')
+}
+
+// ── Subject "explode" handoff ──────────────────────────────────────────────
+// Show/hide the "Explode this brain" button after a segmentation completes.
+function setExplodeButton(show) {
+  const b = document.getElementById('btnExplodeSubject')
+  if (b) b.style.display = show ? '' : 'none'
+}
+
+// Turn the last segmentation's labelled volume into per-region meshes in the
+// exact bundle format the Advanced view consumes (js/subject-mesh.js), then hand
+// it to the explode scene (window.loadSubjectExploded, in explore-fmri.js).
+function explodeSubject() {
+  if (!_lastSeg) { toast('Segment a brain first', 'err'); return }
+  if (!window.SubjectMesh || !window.loadSubjectExploded) {
+    toast('3D explode module not loaded', 'err'); return
+  }
+  showLoading('Building 3D meshes…')
+  // Defer so the overlay paints before the (synchronous) marching-cubes pass.
+  setTimeout(() => {
+    try {
+      const bundle = _lastSeg.mode === 'advanced' ? buildAdvancedBundle() : buildBasicBundle()
+      diag('info', 'subject bundle built', _lastSeg.mode, bundle.regions.length + ' regions')
+      hideLoading()
+      window.loadSubjectExploded(bundle, { mode: _lastSeg.mode, title: _lastSeg.fname })
+    } catch (e) {
+      hideLoading()
+      diag('error', 'subject mesh build failed', e)
+      toast('Could not build 3D meshes: ' + (e.message || e), 'err')
+    }
+  }, 30)
+}
+
+// Basic: split the GM/WM tissue labels (1 = WM, 2 = GM) into four hemisphere
+// halves so they explode into left/right cortical shells over the white core.
+function buildBasicBundle() {
+  const { labData, dims } = _lastSeg
+  const W = dims.x, H = dims.y, D = dims.z
+  const xmid = midlineX(labData, W, H, D)
+  const out = new Uint8Array(labData.length)
+  for (let z = 0; z < D; z++)
+    for (let y = 0; y < H; y++) {
+      const base = y * W + z * W * H
+      for (let x = 0; x < W; x++) {
+        const c = labData[x + base]; if (!c) continue
+        const left = x < xmid
+        out[x + base] = c === 2 ? (left ? 1 : 2) : (left ? 3 : 4)   // GM L/R, WM L/R
+      }
+    }
+  const regionsMeta = {
+    1: { name: 'GrayMatter_L', displayName: 'Gray matter · L', hemisphere: 'L', lobe: 'Gray matter', network: 'Gray matter' },
+    2: { name: 'GrayMatter_R', displayName: 'Gray matter · R', hemisphere: 'R', lobe: 'Gray matter', network: 'Gray matter' },
+    3: { name: 'WhiteMatter_L', displayName: 'White matter · L', hemisphere: 'L', lobe: 'White matter', network: 'White matter' },
+    4: { name: 'WhiteMatter_R', displayName: 'White matter · R', hemisphere: 'R', lobe: 'White matter', network: 'White matter' },
+  }
+  return SubjectMesh.buildBundleFromLabels(out, dims, {
+    target: 4, regionsMeta, smoothIterations: 2, minVoxels: 50, source: 'basic-tissue',
+  })
+}
+
+// Advanced: split each parcellation label (except midline structures) into L/R
+// by the mid-sagittal plane, giving each cortical region its own hemisphere mesh
+// (nicer explode + meaningful hemisphere colouring). Synthetic ids: L = 2c-1,
+// R = 2c, midline = 2c. Values reach 2*49 = 98, so a Uint16 volume is needed.
+function buildAdvancedBundle() {
+  const { labData, dims } = _lastSeg
+  const W = dims.x, H = dims.y, D = dims.z
+  const xmid = midlineX(labData, W, H, D)
+  const out = new Uint16Array(labData.length)
+  const regionsMeta = {}
+  for (let z = 0; z < D; z++)
+    for (let y = 0; y < H; y++) {
+      const base = y * W + z * W * H
+      for (let x = 0; x < W; x++) {
+        const c = labData[x + base]; if (!c) continue
+        let id, hemi
+        if (FS_MIDLINE.has(c)) { id = 2 * c; hemi = 'M' }
+        else { const left = x < xmid; hemi = left ? 'L' : 'R'; id = left ? 2 * c - 1 : 2 * c }
+        out[x + base] = id
+        if (!regionsMeta[id]) {
+          const nm = (_parcLabels && _parcLabels[c]) || `Class ${c}`
+          const taxo = FS_TAXO[nm] || { lobe: 'Other', network: 'Other' }
+          regionsMeta[id] = {
+            name: nm + '_' + hemi,
+            displayName: prettyFS(nm) + (hemi === 'M' ? '' : ' · ' + hemi),
+            hemisphere: hemi, lobe: taxo.lobe, network: taxo.network,
+          }
+        }
+      }
+    }
+  return SubjectMesh.buildBundleFromLabels(out, dims, {
+    target: 4, regionsMeta, smoothIterations: 2, minVoxels: 30, source: 'parcellation',
+  })
+}
+
+// Mid-sagittal split plane: midpoint of the labelled brain's X (Right–Left) extent.
+function midlineX(labData, W, H, D) {
+  let x0 = W, x1 = 0
+  for (let z = 0; z < D; z++)
+    for (let y = 0; y < H; y++) {
+      const base = y * W + z * W * H
+      for (let x = 0; x < W; x++) if (labData[x + base]) { if (x < x0) x0 = x; if (x > x1) x1 = x }
+    }
+  return (x0 + x1) / 2
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -1332,8 +1643,11 @@ async function init() {
   }
   const fileT1 = document.getElementById('fileT1')
   const btnSeg = document.getElementById('btnSegment')
-  fileT1.onchange = () => { btnSeg.disabled = !fileT1.files.length }
-  btnSeg.onclick  = () => { if (fileT1.files[0]) runSegmentation(fileT1.files[0]) }
+  const segMode = () => (document.querySelector('input[name="segMode"]:checked') || {}).value || 'basic'
+  fileT1.onchange = () => { btnSeg.disabled = !fileT1.files.length; setExplodeButton(false) }
+  btnSeg.onclick  = () => { if (fileT1.files[0]) runSegmentation(fileT1.files[0], segMode()) }
+  const btnExplode = document.getElementById('btnExplodeSubject')
+  if (btnExplode) btnExplode.onclick = () => explodeSubject()
   document.getElementById('vmClose').onclick = closeVolModal
   document.getElementById('vmDone').onclick  = closeVolModal
   document.getElementById('vmCsv').onclick   = saveVolCsv
