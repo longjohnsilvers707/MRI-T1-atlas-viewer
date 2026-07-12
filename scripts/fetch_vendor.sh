@@ -14,7 +14,7 @@ BC_SHA="4c87885f3a2a8835e260d521dcec922b58d91d41"
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 V="$ROOT/vendor"
-mkdir -p "$V/niivue" "$V/three" "$V/tfjs" "$V/brainchop/model5_gw_ae"
+mkdir -p "$V/niivue" "$V/three" "$V/tfjs" "$V/brainchop/model5_gw_ae" "$V/brainchop/model30chan50cls"
 
 dl() { echo "  $2"; curl -fsSL "$1" -o "$V/$2"; }
 
@@ -39,6 +39,15 @@ BC="https://raw.githubusercontent.com/neuroneural/brainchop/${BC_SHA}/public/mod
 dl "${BC}/model.json"             "brainchop/model5_gw_ae/model.json"
 dl "${BC}/colormap3.json"         "brainchop/model5_gw_ae/colormap3.json"
 dl "${BC}/group1-shard1of1.bin"   "brainchop/model5_gw_ae/group1-shard1of1.bin"
+
+# brainchop parcellation model (same pinned commit) — MeshNet, 50-class
+# DKT-style cortical+subcortical parcellation. Powers the Advanced ("parcellate
+# my brain") explode tier. Fully convolutional, so it runs on a cropped brain
+# bounding box to keep the 50-channel logits from blowing up GPU memory.
+BCP="https://raw.githubusercontent.com/neuroneural/brainchop/${BC_SHA}/public/models/model30chan50cls"
+dl "${BCP}/model.json"   "brainchop/model30chan50cls/model.json"
+dl "${BCP}/colormap.json" "brainchop/model30chan50cls/colormap.json"
+dl "${BCP}/model.bin"    "brainchop/model30chan50cls/model.bin"
 
 echo
 echo "Writing vendor/SHA256SUMS"

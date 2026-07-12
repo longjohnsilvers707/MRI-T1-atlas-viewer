@@ -195,12 +195,21 @@
     <button id="btnRestoreAtlas" style="margin-top:6px;">Back to atlas view (MNI152)</button>
 
     <div class="file-row">
-      <label>Subject T1 → quick GM estimate</label>
+      <label>Segment your own brain (upload a T1)</label>
       <input type="file" id="fileT1" accept=".nii,.gz">
-      <button id="btnSegment" style="margin-top:6px;" disabled>Estimate brain volume</button>
+      <div class="seg-mode">
+        <label><input type="radio" name="segMode" value="basic" checked>
+          <b>Basic</b> — gray/white tissue, fast; gives a volume estimate</label>
+        <label><input type="radio" name="segMode" value="advanced">
+          <b>Advanced</b> — ~50 anatomical regions (slower, needs a decent GPU)</label>
+      </div>
+      <button id="btnSegment" style="margin-top:6px;" disabled>Segment brain</button>
+      <button id="btnExplodeSubject" class="btn-primary" style="margin-top:6px;display:none;">🧠 Explode this brain in 3D →</button>
       <div class="vm-note">
-        In-browser segmentation (brainchop fast model). No upload — runs on your GPU
-        when available, otherwise on CPU (slower). Rough estimate, not FSL-FAST quality.
+        In-browser segmentation (brainchop). No upload — runs on your GPU when
+        available, otherwise on CPU (slower). Basic is a rough tissue estimate
+        (not FSL-FAST quality); Advanced labels anatomical regions you can pull
+        apart in the Advanced view.
       </div>
     </div>
 
@@ -456,6 +465,13 @@
 
   <main id="exploreViewer">
     <canvas id="glExplore"></canvas>
+
+    <!-- Shown only while a user-segmented brain is loaded (from the Figure tab) -->
+    <div id="exSourceBanner" hidden>
+      <span class="ex-src-dot">🧠</span>
+      <span class="ex-src-label"></span>
+      <button id="exBackToAtlas" title="Return to the reference AAL3 atlas brain">Back to reference atlas</button>
+    </div>
 
     <div id="exploreToolbar">
       <button class="overlay-btn" id="exLearn" title="Learn mode — click a region to see what it does">Learn</button>
@@ -782,6 +798,10 @@
 </div>
 
 <script src="./js/bootstrap.js"></script>
+
+<!-- Subject segmentation → per-region meshes (labeled volume → explode bundle).
+     Classic script exposing window.SubjectMesh; used by the module below. -->
+<script src="./js/subject-mesh.js"></script>
 
 <script type="module" src="./js/viewer.js"></script>
 
