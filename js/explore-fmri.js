@@ -1,6 +1,6 @@
 // ───── Tab switching (independent of Three.js load) ─────
 const tabButtons = [...document.querySelectorAll('.tab-btn')]
-let exploreInited = false, fmriInited = false
+let exploreInited = false, fmriInited = false, dtiInited = false
 // GPU-context lifecycle (issues.md B2): each tab's WebGL context is created
 // lazily exactly once (guarded by the *Inited flags below) and then reused —
 // switching tabs only pauses/resumes the dirty-flag-gated RAF loops, it never
@@ -14,6 +14,7 @@ function switchTab(name) {
   document.getElementById('view-figure').hidden  = name !== 'figure'
   document.getElementById('view-explore').hidden = name !== 'explore'
   document.getElementById('view-fmri').hidden    = name !== 'fmri'
+  document.getElementById('view-dti').hidden     = name !== 'dti'
   tabButtons.forEach(b => b.classList.toggle('active', b.dataset.tab === name))
   if (name === 'explore') {
     if (!exploreInited) { exploreInited = true; initExplore() }  // initExplore kicks startAnim()
@@ -21,6 +22,11 @@ function switchTab(name) {
   } else if (name === 'fmri') {
     if (!fmriInited) { fmriInited = true; fmriInit() }           // fmriInit kicks fmriStartAnim()
     else fmriStartAnim()
+  } else if (name === 'dti') {
+    // The DTI controller owns one NiiVue context and no RAF loop. Resize only
+    // after the hidden panel becomes visible so its canvas gets real bounds.
+    if (!dtiInited) { dtiInited = true; window.dtiInit() }
+    else window.dtiResume()
   }
 }
 tabButtons.forEach(b => (b.onclick = () => switchTab(b.dataset.tab)))
@@ -31,7 +37,7 @@ tabButtons.forEach(b => (b.onclick = () => switchTab(b.dataset.tab)))
 // siblings in a .collapse-body and toggle a .collapsed class on click. The
 // open/closed state is remembered per section in localStorage.
 function initCollapsibleSections() {
-  const SECTIONS = '.ex-section, .fm-section, #atlasSection, #slicePanel, #controlsPanel, #volumePanel, #regionPanel, #exportCliPanel'
+  const SECTIONS = '.ex-section, .fm-section, .dti-section, #atlasSection, #slicePanel, #controlsPanel, #volumePanel, #regionPanel, #exportCliPanel'
   document.querySelectorAll(SECTIONS).forEach(sec => {
     if (sec.dataset.collapsibleInit) return
     // Only sections whose first real control is a bold label header become
@@ -2438,7 +2444,7 @@ function fmriUpdateTime() {
 }
 function fmriToast(msg, type) {
   const el = document.getElementById('fmriToast')
-  el.textContent = msg; el.className = type === 'err' ? 'show err' : 'show'
+  el.textContent = msg; el.className = type === 'err' ? 'modality-toast show err' : 'modality-toast show'
   clearTimeout(el._t); el._t = setTimeout(() => el.classList.remove('show'), 3200)
 }
 function fmriSavePNG() {
@@ -2697,7 +2703,7 @@ window.__captureFmri = function () { return window.__captureFmriPane('brain') }
 
 const VP = (() => {
   const items = []                       // { id, url, tab, label }
-  const TAB_NAMES = { figure: 'Figure', explore: 'Advanced', fmri: 'fMRI' }
+  const TAB_NAMES = { figure: 'Figure', explore: 'Advanced', fmri: 'fMRI', dti: 'DTI' }
   let dragId = null, statusTimer = null
 
   const $ = id => document.getElementById(id)
@@ -2741,6 +2747,13 @@ const VP = (() => {
       ['Axial slice',       () => window.__captureFmriPane('axial')],
       ['Sagittal slice',    () => window.__captureFmriPane('sagittal')],
       ['Coronal slice',     () => window.__captureFmriPane('coronal')],
+    ],
+    dti: [
+      ['All DTI views', () => window.__captureDtiPane('multi')],
+      ['Axial slice',   () => window.__captureDtiPane('axial')],
+      ['Sagittal slice',() => window.__captureDtiPane('sagittal')],
+      ['Coronal slice', () => window.__captureDtiPane('coronal')],
+      ['3D render',     () => window.__captureDtiPane('render')],
     ],
   }
 

@@ -30,6 +30,17 @@ CACHE_FILES = {
                       "e33dcfd37ceec56efa5e419249fd2a778313371e56b65c8d217af80cefdd6821"),
     "aal.nii.gz":    (f"{_CDN}/aal.nii.gz",
                       "af9fcba49420955020e61c72cf28ab89e12662e2ce64659456c10592ad88f834"),
+    # Official FSL diffusion template/atlases. These are also committed for the
+    # static GitHub Pages build; the local server verifies them on every start.
+    "jhu-icbm-fa-2mm.nii.gz": (
+        "https://git.fmrib.ox.ac.uk/fsl/data_atlases/-/raw/b3ad6133f723052d8295c48c68bbc8ab05961874/JHU/JHU-ICBM-FA-2mm.nii.gz",
+        "8418e2ab899395c37ca9436ac687b0740047308afb61123aa6c26f4961ae5114"),
+    "jhu-icbm-dti81-labels-1mm.nii.gz": (
+        "https://git.fmrib.ox.ac.uk/fsl/data_atlases/-/raw/b3ad6133f723052d8295c48c68bbc8ab05961874/JHU/JHU-ICBM-labels-1mm.nii.gz",
+        "3c3f5d2f1250a3df60982acff35a75b99fd549a05d5f8124a63f78221aa0ec16"),
+    "smatt-labels-1mm.nii.gz": (
+        "https://git.fmrib.ox.ac.uk/fsl/data_atlases/-/raw/b3ad6133f723052d8295c48c68bbc8ab05961874/SMATT/SMATT-labels-1mm.nii.gz",
+        "78e179ab8d6bebe9ddd68411438a04a746379737e24edbafc2c36637c73ceb49"),
 }
 
 
