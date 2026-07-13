@@ -883,16 +883,16 @@ canvas#glExplore { width: 100%; height: 100%; display: block; }
   line-height: 1.6;
 }
 
-/* ═══════════════ fMRI TAB ═══════════════ */
-#fmriSidebar {
+/* ═══════════════ MODALITY TABS (fMRI / DTI) ═══════════════ */
+.modality-sidebar {
   width: 290px; min-width: 250px;
   background: var(--panel); border-right: 1px solid var(--border);
   display: flex; flex-direction: column; overflow-y: auto; flex-shrink: 0;
   scrollbar-width: thin; scrollbar-color: var(--border) transparent;
 }
-#fmriSidebar::-webkit-scrollbar { width: 4px; }
-#fmriSidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
-.fm-section { padding: 9px 14px 11px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.modality-sidebar::-webkit-scrollbar { width: 4px; }
+.modality-sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+.fm-section, .dti-section { padding: 9px 14px 11px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
 .fm-readout { font-size: 11px; color: var(--dim); font-variant-numeric: tabular-nums; }
 .fm-src-tag {
   display: inline-block; font-size: 10px; padding: 1px 7px; border-radius: 9px;
@@ -904,9 +904,9 @@ canvas#glExplore { width: 100%; height: 100%; display: block; }
 .fm-transport button { flex: 0 0 auto; padding: 5px 9px; }
 #fmPlay { min-width: 64px; }
 
-/* Viewer is a vertical stack: 3-D render · slice strip · feeder plot · status */
-#fmriViewer { flex: 1; display: flex; flex-direction: column; background: #000; overflow: hidden; }
-#fmriRender { position: relative; flex: 1 1 auto; min-height: 0; background: #000; }
+/* Viewer is a vertical stack: render area plus any modality-specific panels. */
+.modality-viewer { flex: 1; display: flex; flex-direction: column; background: #000; overflow: hidden; min-width: 0; }
+.modality-render { position: relative; flex: 1 1 auto; min-height: 0; background: #000; }
 canvas#glFmri { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 #fmriToolbar { position: absolute; top: 10px; right: 10px; display: flex; gap: 6px; z-index: 50; }
 .overlay-btn[aria-expanded="true"] { background: rgba(88,166,255,0.18); border-color: var(--accent); }
@@ -947,21 +947,21 @@ canvas#glFmri { position: absolute; inset: 0; width: 100%; height: 100%; display
 .fm-assoc-empty { font-size: 11px; color: var(--dim); padding: 8px 6px; line-height: 1.5; }
 .fm-assoc-settings { border-top: 1px solid var(--border); padding: 8px 10px; }
 .fm-assoc-settings .label-xs { margin-bottom: 4px; }
-#fmriLoading {
+.modality-loading {
   position: absolute; inset: 0; background: rgba(13,17,23,0.92);
   display: none; flex-direction: column; align-items: center; justify-content: center;
   gap: 14px; z-index: 100;
 }
-#fmriLoading.active { display: flex; }
-#fmriToast {
+.modality-loading.active { display: flex; }
+.modality-toast {
   position: absolute; top: 12px; left: 50%; transform: translateX(-50%) translateY(-6px);
   background: var(--panel2); border: 1px solid var(--border); border-radius: var(--radius);
   padding: 7px 14px; font-size: 12px; color: var(--text);
   opacity: 0; transition: opacity 0.2s, transform 0.2s; z-index: 200;
   white-space: nowrap; pointer-events: none;
 }
-#fmriToast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
-#fmriToast.err { border-color: var(--danger); }
+.modality-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+.modality-toast.err { border-color: var(--danger); }
 
 /* Colour-scale legend (top-left of the render) */
 #fmriLegend {
@@ -998,12 +998,49 @@ canvas#fmriSlices { width: 100%; height: 100%; display: block; }
 #fmriPlotHdr .legend-item { display: flex; align-items: center; }
 #fmriPlotHdr .swatch { width: 18px; height: 3px; border-radius: 2px; display: inline-block; vertical-align: middle; margin-right: 5px; }
 canvas#fmriPlot { width: 100%; height: 78px; display: block; cursor: pointer; }
-#fmriStatus {
+.modality-status {
   flex: 0 0 22px; background: rgba(13,17,23,0.82);
   border-top: 1px solid var(--border); display: flex; align-items: center;
   padding: 0 10px; font-size: 11px; color: var(--dim); gap: 14px;
   user-select: none;
 }
+
+/* ═══════════════ DTI TAB ═══════════════ */
+canvas#dtiCanvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.modality-toolbar { position: absolute; top: 10px; right: 10px; display: flex; gap: 6px; z-index: 50; }
+#dtiHint {
+  position: absolute; top: 10px; left: 10px; z-index: 40;
+  max-width: 330px; padding: 7px 9px; border: 1px solid var(--border);
+  border-radius: var(--radius); background: rgba(13,17,23,0.76);
+  color: var(--dim); font-size: 10px; line-height: 1.5;
+  pointer-events: none; user-select: none;
+}
+#dtiHint b { color: var(--text); font-weight: 600; }
+#dtiSearch {
+  width: 100%; margin-top: 7px; padding: 5px 7px;
+  color: var(--text); background: var(--bg); border: 1px solid var(--border);
+  border-radius: var(--radius); font-size: 11px;
+}
+#dtiTractList {
+  max-height: 300px; overflow-y: auto; margin: 6px -5px 0;
+  padding: 0 2px; scrollbar-width: thin; scrollbar-color: var(--border) transparent;
+}
+#dtiTractList::-webkit-scrollbar { width: 4px; }
+#dtiTractList::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+.dt-group-heading {
+  position: sticky; top: 0; z-index: 1; padding: 5px 5px 3px;
+  background: var(--panel); color: var(--dim); font-size: 9px; font-weight: 700;
+  letter-spacing: .06em; text-transform: uppercase;
+}
+.dt-tract-row {
+  display: flex; align-items: center; gap: 6px; min-height: 25px; padding: 3px 5px;
+  border-radius: 4px; color: var(--text); font-size: 11px; cursor: pointer; user-select: none;
+}
+.dt-tract-row:hover { background: var(--panel2); }
+.dt-tract-check { flex: 0 0 auto; }
+.dt-tract-swatch { width: 10px; height: 10px; border-radius: 3px; flex: 0 0 auto; border: 1px solid rgba(255,255,255,.2); }
+.dt-tract-name { flex: 1 1 auto; min-width: 0; line-height: 1.25; }
+.dt-tract-index { color: var(--dim); font-size: 9px; font-variant-numeric: tabular-nums; }
 
 /* ═══════════════ COLLECTION PANEL (floating, cross-tab) ═══════════════ */
 #viewPanel {

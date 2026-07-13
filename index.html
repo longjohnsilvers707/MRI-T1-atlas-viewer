@@ -32,6 +32,7 @@
   <button class="tab-btn active" data-tab="figure">Figure</button>
   <button class="tab-btn" data-tab="explore">Advanced view</button>
   <button class="tab-btn" data-tab="fmri">fMRI</button>
+  <button class="tab-btn" data-tab="dti">DTI</button>
 </div>
 
 <div id="tabContent">
@@ -514,7 +515,7 @@
 <!-- ═══════════════ fMRI VIEW ═══════════════ -->
 <div class="tab-view" id="view-fmri" hidden>
 
-  <aside id="fmriSidebar">
+  <aside id="fmriSidebar" class="modality-sidebar">
     <div class="s-header">
       <h1>
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
@@ -631,8 +632,8 @@
     </div>
   </aside>
 
-  <main id="fmriViewer">
-    <div id="fmriRender">
+  <main id="fmriViewer" class="modality-viewer">
+    <div id="fmriRender" class="modality-render">
       <canvas id="glFmri"></canvas>
 
       <div id="fmriToolbar">
@@ -701,12 +702,12 @@
         <div class="lg-ends"><span id="fmLegendLo">0</span><span id="fmLegendHi">+max</span></div>
       </div>
 
-      <div id="fmriLoading" class="active">
+      <div id="fmriLoading" class="modality-loading active">
         <div class="spinner"></div>
         <div id="fmriLoadingMsg">Loading 3D brain…</div>
       </div>
 
-      <div id="fmriToast"></div>
+      <div id="fmriToast" class="modality-toast"></div>
     </div>
 
     <div id="fmriSliceStrip">
@@ -724,12 +725,137 @@
       <canvas id="fmriPlot"></canvas>
     </div>
 
-    <div id="fmriStatus">
+    <div id="fmriStatus" class="modality-status">
       <span id="fmriHover">Press ▶ Play · hover a region to identify · drag to orbit</span>
       <span id="fmriSel"></span>
     </div>
   </main>
 </div><!-- #view-fmri -->
+
+<!-- ═══════════════ DTI VIEW ═══════════════ -->
+<div class="tab-view" id="view-dti" hidden>
+
+  <aside id="dtiSidebar" class="modality-sidebar">
+    <div class="s-header">
+      <h1>
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <path d="M2 12 C4 3, 6 3, 8 12 M5 13 C7 5, 10 4, 14 8 M8 13 C10 8, 12 7, 14 5" stroke="#58a6ff" stroke-width="1.2" stroke-linecap="round"/>
+        </svg>
+        DTI
+      </h1>
+    </div>
+
+    <div class="dti-section">
+      <div class="label-xs">Diffusion data</div>
+      <div style="margin-top:6px;">Using <span class="fm-src-tag" id="dtiSrcTag">JHU ICBM FA template (2 mm)</span></div>
+      <div class="fm-readout" id="dtiDataInfo" style="margin-top:6px;">Fractional anisotropy (FA)</div>
+      <div class="ctrl-row" style="margin-top:7px;">
+        <span class="ctrl-lbl">Scalar metric</span>
+        <select id="dtiMetric">
+          <option value="fa" selected>FA</option>
+          <option value="md">MD</option>
+          <option value="ad">AD</option>
+          <option value="rd">RD</option>
+          <option value="other">Other scalar</option>
+        </select>
+      </div>
+      <label class="fm-file">Load subject scalar map (.nii / .nii.gz, standard or registered space)
+        <input type="file" id="dtiScalarFile" accept=".nii,.nii.gz,.gz">
+      </label>
+      <div class="btn-row" style="margin-top:8px;">
+        <button id="dtiResetData">Restore template</button>
+      </div>
+      <div class="netmap-note">
+        The bundled image is the JHU ICBM FA template. Subject maps are kept in
+        your browser; register them to the selected atlas for valid tract labels.
+      </div>
+    </div>
+
+    <div class="dti-section" id="dtiAtlasSection">
+      <div class="label-xs">White-matter atlas</div>
+      <select id="dtiAtlasSelect" aria-label="DTI white-matter atlas" style="margin-top:6px;"></select>
+      <div class="netmap-note" id="dtiAtlasDescription"></div>
+      <div class="ctrl-row" style="margin-top:7px;">
+        <span class="ctrl-lbl">Group</span>
+        <select id="dtiGroup">
+          <option value="all">All groups</option>
+          <option value="Left">Left</option>
+          <option value="Right">Right</option>
+          <option value="Midline / bilateral">Midline / bilateral</option>
+        </select>
+      </div>
+      <input type="search" id="dtiSearch" placeholder="Filter tracts…" aria-label="Filter DTI tracts">
+      <div class="btn-row" style="margin-top:7px;">
+        <button id="dtiAll">All</button>
+        <button id="dtiNone">None</button>
+        <button id="dtiInvert">Invert</button>
+      </div>
+      <div class="fm-readout" id="dtiTractCount" style="margin-top:6px;">Loading tracts…</div>
+      <div id="dtiTractList" aria-live="polite"></div>
+    </div>
+
+    <div class="dti-section">
+      <div class="label-xs">Display</div>
+      <div class="ctrl-row" style="margin-top:6px;">
+        <span class="ctrl-lbl">View</span>
+        <select id="dtiViewMode">
+          <option value="multi" selected>All slices + 3D</option>
+          <option value="axial">Axial</option>
+          <option value="sagittal">Sagittal</option>
+          <option value="coronal">Coronal</option>
+          <option value="render">3D render</option>
+        </select>
+      </div>
+      <div class="ctrl-row">
+        <span class="ctrl-lbl">Show atlas</span>
+        <input type="checkbox" id="dtiShowAtlas" checked>
+      </div>
+      <div class="ctrl-row">
+        <span class="ctrl-lbl">Atlas opacity</span>
+        <input type="range" id="dtiAtlasOpacity" min="0" max="100" value="72">
+      </div>
+      <div class="ctrl-row">
+        <span class="ctrl-lbl">Scalar opacity</span>
+        <input type="range" id="dtiBgOpacity" min="0" max="100" value="100">
+      </div>
+      <div class="ctrl-row">
+        <span class="ctrl-lbl">Atlas outline</span>
+        <select id="dtiOutline">
+          <option value="0" selected>Filled</option>
+          <option value="1">Thin outline</option>
+          <option value="2">Thick outline</option>
+        </select>
+      </div>
+      <div class="ctrl-row">
+        <span class="ctrl-lbl">Crosshair</span>
+        <input type="checkbox" id="dtiCrosshair" checked>
+      </div>
+    </div>
+  </aside>
+
+  <main id="dtiViewer" class="modality-viewer">
+    <div id="dtiRender" class="modality-render">
+      <canvas id="dtiCanvas"></canvas>
+      <div id="dtiToolbar" class="modality-toolbar">
+        <button class="overlay-btn" id="dtiResetView">Reset view</button>
+        <button class="overlay-btn" id="dtiScreenshot">Save PNG</button>
+      </div>
+      <div id="dtiHint">
+        <b>Diffusion tensor imaging</b><br>
+        Drag slices to move the crosshair · drag the 3D pane to rotate<br>
+        Double-click a tract in the sidebar to isolate it
+      </div>
+      <div id="dtiLoading" class="modality-loading active">
+        <div class="spinner"></div>
+        <div id="dtiLoadingMsg">DTI viewer loads when this tab is opened…</div>
+      </div>
+      <div id="dtiToast" class="modality-toast"></div>
+    </div>
+    <div id="dtiStatus" class="modality-status">
+      <span id="dtiLocation">Move the crosshair to inspect scalar values and tract labels</span>
+    </div>
+  </main>
+</div><!-- #view-dti -->
 
 </div><!-- #tabContent -->
 </div><!-- #app -->
@@ -804,6 +930,10 @@
 <script src="./js/subject-mesh.js"></script>
 
 <script type="module" src="./js/viewer.js"></script>
+
+<!-- DTI uses pure catalog/LUT helpers plus one lazy NiiVue controller. -->
+<script src="./js/dti-core.js"></script>
+<script src="./js/dti.js"></script>
 
 <!-- ═══════════════════════════════════════════════════════════════════════
      EXPLORE TAB  —  interactive Three.js brain (explode / highlight / networks)

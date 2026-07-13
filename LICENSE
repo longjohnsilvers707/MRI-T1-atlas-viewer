@@ -27,11 +27,13 @@ related files in this repository).
 
 The following are NOT covered and remain under their original licenses:
 
-  * Atlas data (labels/*.txt and downloaded NIfTI volumes):
+  * Atlas data (`labels/*` and `cache/*.nii.gz`):
     - AAL          — Tzourio-Mazoyer et al. 2002
     - AAL3         — Rolls et al. 2020
     - AICHA        — Joliot et al. 2015
-    - JHU          — Faria et al. 2012
+    - JHU (gray matter) — Faria et al. 2012
+    - JHU ICBM-DTI-81  — Mori et al. 2008
+    - SMATT             — Archer et al. 2018
     - CIT168       — Pauli et al. 2018
     - MNI152       — Montreal Neurological Institute
     Each atlas is the work of its original authors and is redistributed
