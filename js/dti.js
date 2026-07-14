@@ -15,7 +15,7 @@
     name: 'JHU ICBM FA template (2 mm)',
   })
   const METRICS = Object.freeze({
-    fa: { name: 'Fractional anisotropy (FA)', colormap: 'gray', min: 0, max: 1 },
+    fa: { name: 'Fractional anisotropy (FA)', colormap: 'gray', min: 0, max: 0.7 },
     md: { name: 'Mean diffusivity (MD)', colormap: 'viridis', min: 0, max: 0.003 },
     ad: { name: 'Axial diffusivity (AD)', colormap: 'viridis', min: 0, max: 0.003 },
     rd: { name: 'Radial diffusivity (RD)', colormap: 'viridis', min: 0, max: 0.003 },
@@ -384,7 +384,7 @@
       D.nv.setMultiplanarPadPixels(6)
 
       D.templateImage = await D.lib.NVImage.loadFromUrl({
-        url: TEMPLATE.url, name: TEMPLATE.name, colormap: 'gray', cal_min: 0, cal_max: 1,
+        url: TEMPLATE.url, name: TEMPLATE.name, colormap: 'gray',
       })
       D.backgroundImage = D.templateImage
       await loadAtlas(D.atlasId)

@@ -264,6 +264,12 @@ button:active { background: #1c2230; }
   min-height: 180px;       /* never collapse to nothing; forces sidebar scroll when cramped */
 }
 
+/* Unlike other sections, #regionPanel carries no side padding of its own (its
+   rows indent themselves instead), so its header div's border-box would
+   otherwise reach the true sidebar edge and put the collapse chevron 14px to
+   the right of every other section's chevron. Match that 14px inset here. */
+#regionPanel > .label-xs { margin-right: 14px; }
+
 .rp-search {
   padding: 6px 14px;
   border-bottom: 1px solid var(--border);
@@ -892,7 +898,7 @@ canvas#glExplore { width: 100%; height: 100%; display: block; }
 }
 .modality-sidebar::-webkit-scrollbar { width: 4px; }
 .modality-sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
-.fm-section, .dti-section { padding: 9px 14px 11px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.fm-section, .dti-section, .fr-section { padding: 9px 14px 11px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
 .fm-readout { font-size: 11px; color: var(--dim); font-variant-numeric: tabular-nums; }
 .fm-src-tag {
   display: inline-block; font-size: 10px; padding: 1px 7px; border-radius: 9px;
@@ -1041,6 +1047,80 @@ canvas#dtiCanvas { position: absolute; inset: 0; width: 100%; height: 100%; disp
 .dt-tract-swatch { width: 10px; height: 10px; border-radius: 3px; flex: 0 0 auto; border: 1px solid rgba(255,255,255,.2); }
 .dt-tract-name { flex: 1 1 auto; min-width: 0; line-height: 1.25; }
 .dt-tract-index { color: var(--dim); font-size: 9px; font-variant-numeric: tabular-nums; }
+
+/* ═══════════════ FIGURE REFINEMENT TAB ═══════════════ */
+#frImportList { max-height: 220px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+.fr-import-row {
+  display: flex; align-items: center; gap: 7px; background: var(--panel2);
+  border: 1px solid var(--border); border-radius: 6px; padding: 5px;
+}
+.fr-import-thumb { width: 46px; height: 34px; flex: 0 0 auto; object-fit: contain; background: #000; border-radius: 4px; }
+.fr-import-label {
+  flex: 1 1 auto; min-width: 0; font-size: 11px; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+#frToolbar {
+  flex: 0 0 auto; display: flex; justify-content: flex-end; gap: 6px;
+  padding: 8px 10px; border-bottom: 1px solid var(--border); background: var(--panel);
+}
+#frCanvasWrap {
+  position: relative; flex: 1 1 auto; min-height: 0; overflow: auto;
+  display: flex; align-items: flex-start; justify-content: center;
+  padding: 24px; background: #05070a;
+}
+#frPage {
+  position: relative; width: min(100%, 900px); flex-shrink: 0;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.55); border: 1px solid var(--border);
+}
+#frPage.fr-transparent {
+  background-image: repeating-conic-gradient(#2a2f38 0% 25%, #1c2028 0% 50%);
+  background-size: 20px 20px;
+}
+#frGridOverlay {
+  position: absolute; inset: 0; pointer-events: none; display: none;
+  background-image:
+    repeating-linear-gradient(to right, rgba(88,166,255,0.28) 0 1px, transparent 1px 100%),
+    repeating-linear-gradient(to bottom, rgba(88,166,255,0.28) 0 1px, transparent 1px 100%);
+}
+#frGridOverlay.active { display: block; }
+#frPanelsLayer { position: absolute; inset: 0; }
+
+.fr-panel {
+  position: absolute; border: 1px solid rgba(255,255,255,0.12); background: rgba(0,0,0,0.15);
+  display: flex; flex-direction: column; overflow: visible;
+}
+.fr-panel:not(.fr-text-panel) { cursor: move; }
+.fr-panel.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.fr-panel img { width: 100%; height: 100%; object-fit: contain; display: block; flex: 1 1 auto; min-height: 0; }
+.fr-badge {
+  position: absolute; top: 4px; left: 4px; max-width: calc(100% - 8px);
+  background: rgba(13,17,23,0.82); color: #e6edf3; font-size: 11px; padding: 3px 7px;
+  border-radius: 5px; cursor: text; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; outline: none;
+}
+
+.fr-bar {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 5px; height: 18px;
+  padding: 0 6px; background: var(--panel2); border-bottom: 1px solid var(--border);
+  cursor: move; font-size: 9px; text-transform: uppercase; letter-spacing: .04em; color: var(--dim);
+}
+.fr-grip { font-size: 11px; line-height: 1; }
+.fr-textbox {
+  flex: 1 1 auto; min-height: 0; padding: 6px; overflow: auto; outline: none;
+  cursor: text; word-break: break-word; line-height: 1.3; background: rgba(255,255,255,0.03);
+}
+.fr-textbox:empty::before { content: 'Click to edit'; color: var(--dim); }
+
+.fr-handle {
+  position: absolute; width: 9px; height: 9px; background: var(--accent);
+  border: 1px solid #0d1117; border-radius: 2px; z-index: 20; display: none;
+}
+.fr-panel.selected .fr-handle { display: block; }
+.fr-handle-nw { top: -5px; left: -5px; cursor: nwse-resize; }
+.fr-handle-ne { top: -5px; right: -5px; cursor: nesw-resize; }
+.fr-handle-sw { bottom: -5px; left: -5px; cursor: nesw-resize; }
+.fr-handle-se { bottom: -5px; right: -5px; cursor: nwse-resize; }
 
 /* ═══════════════ COLLECTION PANEL (floating, cross-tab) ═══════════════ */
 #viewPanel {
