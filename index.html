@@ -33,6 +33,7 @@
   <button class="tab-btn" data-tab="explore">Advanced view</button>
   <button class="tab-btn" data-tab="fmri">fMRI</button>
   <button class="tab-btn" data-tab="dti">DTI</button>
+  <button class="tab-btn" data-tab="refine">Refine</button>
 </div>
 
 <div id="tabContent">
@@ -857,6 +858,109 @@
   </main>
 </div><!-- #view-dti -->
 
+<!-- ═══════════════ FIGURE REFINEMENT VIEW ═══════════════ -->
+<div class="tab-view" id="view-refine" hidden>
+
+  <aside id="refineSidebar" class="modality-sidebar">
+    <div class="s-header">
+      <h1>
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <rect x="2" y="2" width="6" height="5" rx="1" stroke="#58a6ff" stroke-width="1.2"/>
+          <rect x="9" y="2" width="5" height="8" rx="1" stroke="#58a6ff" stroke-width="1.2"/>
+          <rect x="2" y="8.5" width="6" height="5.5" rx="1" stroke="#58a6ff" stroke-width="1.2"/>
+        </svg>
+        Refine
+      </h1>
+    </div>
+
+    <div class="fr-section">
+      <div class="label-xs">Page setup</div>
+      <div class="ctrl-row" style="margin-top:6px;">
+        <span class="ctrl-lbl">Preset</span>
+        <select id="frPreset">
+          <option value="letter" selected>Letter (8.5×11in)</option>
+          <option value="a4">A4 (210×297mm)</option>
+          <option value="wide">Widescreen (16:9)</option>
+          <option value="square">Square</option>
+          <option value="custom">Custom…</option>
+        </select>
+      </div>
+      <div class="ctrl-row" id="frCustomRow" style="display:none;">
+        <span class="ctrl-lbl">Size (px)</span>
+        <input type="number" id="frCustomW" value="2000" min="200" step="10" style="width:76px;">
+        <span style="color:var(--dim);">×</span>
+        <input type="number" id="frCustomH" value="2000" min="200" step="10" style="width:76px;">
+      </div>
+      <div class="ctrl-row">
+        <span class="ctrl-lbl">Background</span>
+        <select id="frBackground">
+          <option value="white" selected>White</option>
+          <option value="transparent">Transparent</option>
+          <option value="dark">Dark (app theme)</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="fr-section" id="frImportSection">
+      <div class="label-xs">Import from Collection</div>
+      <div class="netmap-note" id="frImportEmpty" style="margin-top:6px;">
+        No captures yet — open any tab, frame a view, then use the floating
+        Collection panel's “＋ Add view” to capture it here.
+      </div>
+      <div id="frImportList" style="margin-top:4px;display:flex;flex-direction:column;gap:6px;"></div>
+      <div class="btn-row" style="margin-top:8px;">
+        <button class="vp-btn" id="frImportAll" disabled>＋ Add all</button>
+      </div>
+    </div>
+
+    <div class="fr-section">
+      <div class="label-xs">Text</div>
+      <div class="btn-row" style="margin-top:6px;">
+        <button class="vp-btn" id="frAddText">＋ Add text box</button>
+      </div>
+    </div>
+
+    <div class="fr-section">
+      <div class="label-xs">Layout</div>
+      <div class="ctrl-row" style="margin-top:6px;">
+        <span class="ctrl-lbl">Snap to grid</span>
+        <input type="checkbox" id="frSnap">
+      </div>
+      <div class="ctrl-row">
+        <span class="ctrl-lbl">Grid size (px)</span>
+        <input type="number" id="frGridSize" value="40" min="4" step="4" style="width:76px;">
+      </div>
+      <div class="btn-row" style="margin-top:6px;">
+        <button class="vp-btn" id="frAutoArrange">▦ Auto-arrange images</button>
+      </div>
+    </div>
+
+    <div class="fr-section" id="frInspectorSection">
+      <div class="label-xs">Selected panel</div>
+      <div class="netmap-note" id="frInspectorEmpty" style="margin-top:6px;">
+        Click a panel on the page to edit it here.
+      </div>
+      <div id="frInspectorBody" style="display:none;margin-top:6px;"></div>
+    </div>
+  </aside>
+
+  <main id="refineViewer" class="modality-viewer">
+    <div id="frToolbar">
+      <button class="overlay-btn" id="frSavePng">⬇ Save PNG</button>
+    </div>
+    <div id="frCanvasWrap">
+      <div id="frPage">
+        <div id="frGridOverlay"></div>
+        <div id="frPanelsLayer"></div>
+      </div>
+      <div id="frToast" class="modality-toast"></div>
+    </div>
+    <div id="refineStatus" class="modality-status">
+      <span>Drag a panel to move it · drag a corner to resize (images stay aspect-locked) · click text to edit · Delete removes the selected panel</span>
+    </div>
+  </main>
+</div><!-- #view-refine -->
+
 </div><!-- #tabContent -->
 </div><!-- #app -->
 
@@ -934,6 +1038,10 @@
 <!-- DTI uses pure catalog/LUT helpers plus one lazy NiiVue controller. -->
 <script src="./js/dti-core.js"></script>
 <script src="./js/dti.js"></script>
+
+<!-- Figure Refinement: pure page/layout math plus the freeform canvas controller. -->
+<script src="./js/figure-refine-core.js"></script>
+<script src="./js/figure-refine.js"></script>
 
 <!-- ═══════════════════════════════════════════════════════════════════════
      EXPLORE TAB  —  interactive Three.js brain (explode / highlight / networks)

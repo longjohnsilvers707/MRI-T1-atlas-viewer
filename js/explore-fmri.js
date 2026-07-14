@@ -1,6 +1,6 @@
 // ───── Tab switching (independent of Three.js load) ─────
 const tabButtons = [...document.querySelectorAll('.tab-btn')]
-let exploreInited = false, fmriInited = false, dtiInited = false
+let exploreInited = false, fmriInited = false, dtiInited = false, refineInited = false
 // GPU-context lifecycle (issues.md B2): each tab's WebGL context is created
 // lazily exactly once (guarded by the *Inited flags below) and then reused —
 // switching tabs only pauses/resumes the dirty-flag-gated RAF loops, it never
@@ -15,6 +15,7 @@ function switchTab(name) {
   document.getElementById('view-explore').hidden = name !== 'explore'
   document.getElementById('view-fmri').hidden    = name !== 'fmri'
   document.getElementById('view-dti').hidden     = name !== 'dti'
+  document.getElementById('view-refine').hidden  = name !== 'refine'
   tabButtons.forEach(b => b.classList.toggle('active', b.dataset.tab === name))
   if (name === 'explore') {
     if (!exploreInited) { exploreInited = true; initExplore() }  // initExplore kicks startAnim()
@@ -27,6 +28,11 @@ function switchTab(name) {
     // after the hidden panel becomes visible so its canvas gets real bounds.
     if (!dtiInited) { dtiInited = true; window.dtiInit() }
     else window.dtiResume()
+  } else if (name === 'refine') {
+    // Pure DOM canvas, no GPU context — resume just refreshes the "Import
+    // from Collection" list in case captures were added on another tab.
+    if (!refineInited) { refineInited = true; window.refineInit() }
+    else window.refineResume()
   }
 }
 tabButtons.forEach(b => (b.onclick = () => switchTab(b.dataset.tab)))
@@ -37,7 +43,7 @@ tabButtons.forEach(b => (b.onclick = () => switchTab(b.dataset.tab)))
 // siblings in a .collapse-body and toggle a .collapsed class on click. The
 // open/closed state is remembered per section in localStorage.
 function initCollapsibleSections() {
-  const SECTIONS = '.ex-section, .fm-section, .dti-section, #atlasSection, #slicePanel, #controlsPanel, #volumePanel, #regionPanel, #exportCliPanel'
+  const SECTIONS = '.ex-section, .fm-section, .dti-section, .fr-section, #atlasSection, #slicePanel, #controlsPanel, #volumePanel, #regionPanel, #exportCliPanel'
   document.querySelectorAll(SECTIONS).forEach(sec => {
     if (sec.dataset.collapsibleInit) return
     // Only sections whose first real control is a bold label header become
@@ -3014,5 +3020,8 @@ const VP = (() => {
   })()
 
   render()
-  return { addMenu: toggleAddMenu, arrange: openArrange }
+  return { addMenu: toggleAddMenu, arrange: openArrange, getItems: () => items.slice() }
 })()
+// Exposed so the Figure Refinement tab (js/figure-refine.js) can import
+// already-captured views without duplicating any capture logic.
+window.VP = VP
