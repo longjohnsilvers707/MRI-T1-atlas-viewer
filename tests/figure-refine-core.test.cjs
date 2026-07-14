@@ -66,6 +66,27 @@ test('autoArrangeGrid handles empty input and missing dimensions safely', () => 
   assert.ok(placed[0].w > 0 && placed[0].h > 0, 'falls back to a default aspect ratio instead of NaN')
 })
 
+test('autoArrangeGrid honours explicit one- and two-column layouts', () => {
+  const items = Array.from({ length: 5 }, (_, i) => ({ id: String(i), naturalW: 1600, naturalH: 900 }))
+  const pageW = 2550, pageH = 3300
+
+  const one = core.autoArrangeGrid(items, pageW, pageH, { columns: 1, margin: 60, gap: 48 })
+  assert.equal(one.length, 5)
+  for (let i = 1; i < one.length; i++) {
+    assert.ok(one[i].y > one[i - 1].y, 'one-column layout should place every image on a new row')
+    assert.equal(rectsOverlap(one[i - 1], one[i]), false)
+  }
+
+  const two = core.autoArrangeGrid(items, pageW, pageH, { columns: 2, margin: 60, gap: 48 })
+  assert.ok(two[1].x > two[0].x, 'second item should occupy column two')
+  assert.equal(two[1].y, two[0].y, 'first two items should share a row')
+  assert.ok(two[2].y > two[0].y, 'third item should begin row two')
+  assert.equal(two[2].x, two[0].x, 'third item should return to column one')
+  for (let i = 0; i < two.length; i++) {
+    for (let j = i + 1; j < two.length; j++) assert.equal(rectsOverlap(two[i], two[j]), false)
+  }
+})
+
 test('wrapText wraps on word boundaries and never drops characters', () => {
   const measure = s => s.length * 10
   const lines = core.wrapText(measure, 'the quick brown fox jumps', 90)
@@ -86,11 +107,20 @@ test('wrapText handles empty/whitespace-only text without throwing', () => {
   assert.deepEqual(core.wrapText(s => s.length, '   ', 100), [''])
 })
 
+test('wrapText preserves explicit line and paragraph breaks', () => {
+  assert.deepEqual(core.wrapText(s => s.length * 10, 'first line\n\nsecond line', 200), [
+    'first line', '', 'second line',
+  ])
+})
+
 test('Refine tab DOM contract covers every controller id and lazy tab hook', () => {
   const html = read('index.html')
   const controller = read('js/figure-refine.js')
   assert.match(html, /data-tab="refine"/)
   assert.match(html, /id="view-refine"/)
+  assert.match(html, /id="frColumns"/)
+  assert.match(html, /id="frAddHeading"/)
+  assert.doesNotMatch(html, /id="vpArrange"/, 'legacy fixed-aspect arrange modal should be removed')
   assert.match(controller, /window\.refineInit\s*=/)
 
   const ids = new Set([...controller.matchAll(/\$\('([^']+)'\)/g)].map(match => match[1]))

@@ -2716,10 +2716,8 @@ const VP = (() => {
   const els = {
     panel: $('viewPanel'), header: $('vpHeader'), collapse: $('vpCollapse'),
     list: $('vpList'), empty: $('vpEmpty'), count: $('vpCount'),
-    add: $('vpAdd'), menu: $('vpMenu'), save: $('vpSave'), clear: $('vpClear'),
-    cols: $('vpCols'), labels: $('vpLabels'), status: $('vpStatus'),
-    arrangeBtn: $('vpArrangeBtn'), arrange: $('vpArrange'), aGrid: $('vpaGrid'),
-    aCols: $('vpaCols'), aLabels: $('vpaLabels'), aClose: $('vpaClose'), aSave: $('vpaSave'),
+    add: $('vpAdd'), menu: $('vpMenu'), clear: $('vpClear'), status: $('vpStatus'),
+    arrangeBtn: $('vpArrangeBtn'),
   }
 
   function status(msg, kind = '') {
@@ -2803,11 +2801,10 @@ const VP = (() => {
   function render() {
     els.count.textContent = '(' + items.length + ')'
     els.empty.style.display = items.length ? 'none' : ''
-    els.save.disabled = els.clear.disabled = items.length === 0
+    els.clear.disabled = items.length === 0
     if (els.arrangeBtn) els.arrangeBtn.disabled = items.length === 0
     els.list.innerHTML = ''
     items.forEach(it => els.list.appendChild(itemEl(it)))
-    if (els.arrange && els.arrange.classList.contains('active')) renderArrange()
   }
 
   function itemEl(it) {
@@ -2861,137 +2858,17 @@ const VP = (() => {
     return row
   }
 
-  // ── Compose all captured views into one grid PNG at full source resolution ──
-  function loadImg(src) {
-    return new Promise((res, rej) => {
-      const im = new Image()
-      im.onload = () => res(im); im.onerror = rej; im.src = src
-    })
-  }
-
-  async function save() {
-    if (!items.length) return
-    status('Building panel…')
-    let imgs
-    try { imgs = await Promise.all(items.map(it => loadImg(it.url))) }
-    catch (e) { console.error(e); status('Could not read images', 'err'); return }
-
-    const n = imgs.length
-    let cols = els.cols.value === 'auto' ? Math.ceil(Math.sqrt(n)) : parseInt(els.cols.value, 10)
-    cols = Math.max(1, Math.min(cols, n))
-    const rows = Math.ceil(n / cols)
-
-    // Cell sized to the largest capture so nothing is upscaled (capped for memory).
-    const CAP = 1600
-    const cellW = Math.min(CAP, Math.max(...imgs.map(im => im.naturalWidth || 800)))
-    const cellH = Math.min(CAP, Math.max(...imgs.map(im => im.naturalHeight || 600)))
-    const withLabels = els.labels.checked
-    const gap = Math.round(cellW * 0.018)
-    const capH = withLabels ? Math.round(cellW * 0.052) : 0
-    const fontPx = Math.round(cellW * 0.034)
-    const margin = gap
-
-    let W = margin * 2 + cols * cellW + (cols - 1) * gap
-    let H = margin * 2 + rows * (cellH + capH) + (rows - 1) * gap
-
-    // Clamp very large panels so the browser doesn't refuse the canvas.
-    const MAXDIM = 8000, scale = Math.min(1, MAXDIM / Math.max(W, H))
-
-    const cv = document.createElement('canvas')
-    cv.width = Math.round(W * scale); cv.height = Math.round(H * scale)
-    const ctx = cv.getContext('2d')
-    ctx.scale(scale, scale)
-    ctx.fillStyle = '#0d1117'; ctx.fillRect(0, 0, W, H)
-    ctx.imageSmoothingQuality = 'high'
-
-    imgs.forEach((im, i) => {
-      const c = i % cols, r = Math.floor(i / cols)
-      const x = margin + c * (cellW + gap)
-      const y = margin + r * (cellH + capH + gap)
-      ctx.fillStyle = '#000'; ctx.fillRect(x, y, cellW, cellH)
-      // contain-fit, centered
-      const s = Math.min(cellW / im.naturalWidth, cellH / im.naturalHeight)
-      const dw = im.naturalWidth * s, dh = im.naturalHeight * s
-      ctx.drawImage(im, x + (cellW - dw) / 2, y + (cellH - dh) / 2, dw, dh)
-      if (withLabels) {
-        ctx.fillStyle = '#0d1117'; ctx.fillRect(x, y + cellH, cellW, capH)
-        ctx.fillStyle = '#c9d1d9'; ctx.font = `600 ${fontPx}px system-ui, sans-serif`
-        ctx.textBaseline = 'middle'; ctx.textAlign = 'center'
-        let txt = items[i].label || ''
-        const max = cellW - gap * 2
-        while (txt.length > 4 && ctx.measureText(txt).width > max) txt = txt.slice(0, -2)
-        if (txt !== (items[i].label || '')) txt = txt.replace(/…?$/, '…')
-        ctx.fillText(txt, x + cellW / 2, y + cellH + capH / 2)
-      }
-    })
-
-    const a = document.createElement('a')
-    a.href = cv.toDataURL('image/png')
-    a.download = `brain_panel_${cols}x${rows}_${Date.now()}.png`
-    a.click()
-    status('Saved ' + cols + '×' + rows + ' panel', 'ok')
-  }
-
-  // ══ Arrange view — WYSIWYG grid of the final panel, drag tiles to reorder ══
-  function colsValue() {
-    const n = items.length || 1
-    let c = els.cols.value === 'auto' ? Math.ceil(Math.sqrt(n)) : parseInt(els.cols.value, 10)
-    return Math.max(1, Math.min(c, n))
-  }
-  function renderArrange() {
-    if (!els.aGrid) return
-    const cols = colsValue()
-    els.aGrid.style.gridTemplateColumns = 'repeat(' + cols + ', 1fr)'
-    els.aGrid.innerHTML = ''
-    items.forEach((it, i) => els.aGrid.appendChild(arrangeTile(it, i)))
-  }
-  function arrangeTile(it, i) {
-    const cell = document.createElement('div')
-    cell.className = 'vpa-cell'; cell.dataset.id = it.id; cell.draggable = true
-    const img = document.createElement('img'); img.src = it.url; img.alt = it.label; img.draggable = false
-    cell.appendChild(img)
-    if (els.aLabels.checked) {
-      const cap = document.createElement('div'); cap.className = 'vpa-cap'; cap.textContent = it.label
-      cell.appendChild(cap)
-    }
-    const num = document.createElement('span'); num.className = 'vpa-num'; num.textContent = i + 1
-    cell.appendChild(num)
-    cell.addEventListener('dragstart', e => { dragId = it.id; cell.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move' })
-    cell.addEventListener('dragend', () => { dragId = null; cell.classList.remove('dragging'); els.aGrid.querySelectorAll('.drag-over').forEach(n => n.classList.remove('drag-over')) })
-    cell.addEventListener('dragover', e => { e.preventDefault(); if (dragId && dragId !== it.id) cell.classList.add('drag-over') })
-    cell.addEventListener('dragleave', () => cell.classList.remove('drag-over'))
-    cell.addEventListener('drop', e => {
-      e.preventDefault(); cell.classList.remove('drag-over')
-      if (!dragId || dragId === it.id) return
-      const from = items.findIndex(x => x.id === dragId)
-      const to = items.findIndex(x => x.id === it.id)
-      if (from < 0 || to < 0) return
-      items.splice(to, 0, items.splice(from, 1)[0])
-      render(); renderArrange()
-    })
-    return cell
-  }
   function openArrange() {
     if (!items.length) { status('Add some views first', 'err'); return }
-    els.aCols.value = els.cols.value
-    els.aLabels.checked = els.labels.checked
-    renderArrange()
-    els.arrange.classList.add('active')
+    els.panel.classList.add('collapsed')
+    els.collapse.textContent = '▸'
+    switchTab('refine')
+    if (window.refineOpenCollection) window.refineOpenCollection()
   }
-  function closeArrange() { els.arrange.classList.remove('active') }
 
   // ── Wire up controls ──
   els.add.onclick = toggleAddMenu
-  els.save.onclick = save
   if (els.arrangeBtn) els.arrangeBtn.onclick = openArrange
-  if (els.arrange) {
-    els.aClose.onclick = closeArrange
-    els.aSave.onclick = save                       // save() reads the (synced) panel cols/labels
-    els.aCols.onchange = () => { els.cols.value = els.aCols.value; renderArrange() }
-    els.aLabels.onchange = () => { els.labels.checked = els.aLabels.checked; renderArrange() }
-    els.arrange.addEventListener('mousedown', e => { if (e.target === els.arrange) closeArrange() })
-    document.addEventListener('keydown', e => { if (e.key === 'Escape' && els.arrange.classList.contains('active')) closeArrange() })
-  }
   els.clear.onclick = () => { if (items.length && confirm('Clear all captured views?')) { items.length = 0; render() } }
   els.collapse.onclick = () => {
     const c = els.panel.classList.toggle('collapsed')

@@ -33,7 +33,7 @@
   <button class="tab-btn" data-tab="explore">Advanced view</button>
   <button class="tab-btn" data-tab="fmri">fMRI</button>
   <button class="tab-btn" data-tab="dti">DTI</button>
-  <button class="tab-btn" data-tab="refine">Refine</button>
+  <button class="tab-btn" data-tab="refine">Arrange figures</button>
 </div>
 
 <div id="tabContent">
@@ -869,7 +869,7 @@
           <rect x="9" y="2" width="5" height="8" rx="1" stroke="#58a6ff" stroke-width="1.2"/>
           <rect x="2" y="8.5" width="6" height="5.5" rx="1" stroke="#58a6ff" stroke-width="1.2"/>
         </svg>
-        Refine
+        Arrange figures
       </h1>
     </div>
 
@@ -897,7 +897,12 @@
           <option value="white" selected>White</option>
           <option value="transparent">Transparent</option>
           <option value="dark">Dark (app theme)</option>
+          <option value="custom">Custom colour</option>
         </select>
+      </div>
+      <div class="ctrl-row" id="frBackgroundColorRow" style="display:none;">
+        <span class="ctrl-lbl">Colour</span>
+        <input type="color" id="frBackgroundColor" value="#ffffff">
       </div>
     </div>
 
@@ -916,12 +921,37 @@
     <div class="fr-section">
       <div class="label-xs">Text</div>
       <div class="btn-row" style="margin-top:6px;">
-        <button class="vp-btn" id="frAddText">＋ Add text box</button>
+        <button class="vp-btn" id="frAddHeading">＋ Heading</button>
+        <button class="vp-btn" id="frAddText">＋ Text box</button>
       </div>
     </div>
 
     <div class="fr-section">
       <div class="label-xs">Layout</div>
+      <div class="ctrl-row" style="margin-top:6px;">
+        <span class="ctrl-lbl">Columns</span>
+        <select id="frColumns">
+          <option value="auto" selected>Auto</option>
+          <option value="1">1</option>
+          <option value="2">2</option>
+          <option value="3">3</option>
+          <option value="4">4</option>
+        </select>
+      </div>
+      <div class="ctrl-row">
+        <span class="ctrl-lbl">All labels</span>
+        <input type="checkbox" id="frShowLabels" checked>
+      </div>
+      <div class="ctrl-row">
+        <span class="ctrl-lbl">Outer margin</span>
+        <input type="number" id="frMargin" value="60" min="0" max="600" step="4">
+        <span class="fr-unit">px</span>
+      </div>
+      <div class="ctrl-row">
+        <span class="ctrl-lbl">Panel gap</span>
+        <input type="number" id="frGap" value="48" min="0" max="600" step="4">
+        <span class="fr-unit">px</span>
+      </div>
       <div class="ctrl-row" style="margin-top:6px;">
         <span class="ctrl-lbl">Snap to grid</span>
         <input type="checkbox" id="frSnap">
@@ -931,7 +961,7 @@
         <input type="number" id="frGridSize" value="40" min="4" step="4" style="width:76px;">
       </div>
       <div class="btn-row" style="margin-top:6px;">
-        <button class="vp-btn" id="frAutoArrange">▦ Auto-arrange images</button>
+        <button class="vp-btn primary" id="frAutoArrange">▦ Apply grid layout</button>
       </div>
     </div>
 
@@ -946,7 +976,7 @@
 
   <main id="refineViewer" class="modality-viewer">
     <div id="frToolbar">
-      <button class="overlay-btn" id="frSavePng">⬇ Save PNG</button>
+      <button class="overlay-btn" id="frSavePng">⬇ Export PNG</button>
     </div>
     <div id="frCanvasWrap">
       <div id="frPage">
@@ -956,7 +986,7 @@
       <div id="frToast" class="modality-toast"></div>
     </div>
     <div id="refineStatus" class="modality-status">
-      <span>Drag a panel to move it · drag a corner to resize (images stay aspect-locked) · click text to edit · Delete removes the selected panel</span>
+      <span>Drag to move · drag a corner to resize · click labels or text to edit · arrow keys nudge · Delete removes</span>
     </div>
   </main>
 </div><!-- #view-refine -->
@@ -983,47 +1013,11 @@
       <button class="vp-btn primary" id="vpAdd" title="Pick a specific view from the current tab to add">＋ Add view ▾</button>
       <div class="vp-menu" id="vpMenu" hidden></div>
     </div>
-    <div class="vp-opts">
-      <label>Cols
-        <select id="vpCols">
-          <option value="auto" selected>Auto</option>
-          <option value="1">1</option><option value="2">2</option>
-          <option value="3">3</option><option value="4">4</option>
-        </select>
-      </label>
-      <label><input type="checkbox" id="vpLabels" checked> Labels</label>
-    </div>
     <div class="vp-row">
-      <button class="vp-btn" id="vpArrangeBtn" title="Arrange the figures in a grid before saving" disabled>▦ Arrange</button>
-      <button class="vp-btn" id="vpSave">⬇ Save PNG</button>
+      <button class="vp-btn primary" id="vpArrangeBtn" title="Open the dedicated figure arrangement workspace" disabled>▦ Open arranger</button>
       <button class="vp-btn" id="vpClear">Clear</button>
     </div>
     <div class="vp-status" id="vpStatus"></div>
-  </div>
-</div>
-
-<!-- ═══════════════ ARRANGE OVERLAY (reorder tiles before saving PNG) ═══════════════ -->
-<div id="vpArrange" aria-label="Arrange figures">
-  <div class="vpa-card">
-    <div class="vpa-head">
-      <h2>Arrange figures</h2>
-      <div class="vpa-head-opts">
-        <label>Cols
-          <select id="vpaCols">
-            <option value="auto">Auto</option>
-            <option value="1">1</option><option value="2">2</option>
-            <option value="3">3</option><option value="4">4</option>
-          </select>
-        </label>
-        <label><input type="checkbox" id="vpaLabels" checked> Labels</label>
-      </div>
-      <button id="vpaClose" title="Close">×</button>
-    </div>
-    <div class="vpa-hint">Drag tiles to reorder — this is exactly how the saved PNG will be laid out.</div>
-    <div class="vpa-grid" id="vpaGrid"></div>
-    <div class="vpa-foot">
-      <button class="vp-btn" id="vpaSave">⬇ Save PNG</button>
-    </div>
   </div>
 </div>
 
